@@ -1,7 +1,14 @@
 # Runs on the Oracle VM. No database container here — Postgres is Supabase
-# (managed, external); this only runs the API + a reverse proxy in front of
-# it. The frontend is static and deployed separately to Cloudflare Pages,
-# not part of this compose file at all.
+# (managed, external). The frontend is static and deployed separately to
+# Cloudflare Pages, not part of this compose file at all.
+#
+# No local reverse proxy/TLS either (no Caddy) — on the 1GB-RAM Always
+# Free AMD shape, Cloudflare terminates HTTPS at its edge and talks plain
+# HTTP to this VM instead (Cloudflare SSL/TLS mode: "Flexible"), which
+# saves running a second process on a memory-constrained instance. The API
+# listens on port 80 directly. If you later move to a bigger instance and
+# want the VM to terminate its own TLS instead, reintroduce a Caddy (or
+# nginx) service in front of `api` and switch Cloudflare to "Full".
 #
 # Usage (from the repo root on the VM, after `git pull`):
 #   docker compose -f deploy/docker-compose.prod.yml up -d --build
@@ -17,27 +24,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env.production
-    expose:
-      - "4000"
+    ports:
+      - "80:4000"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-
-volumes:
-  caddy_data:
-  caddy_config:

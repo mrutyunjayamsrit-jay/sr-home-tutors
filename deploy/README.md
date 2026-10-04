@@ -11,9 +11,19 @@ This file is just what each piece here does.
 |---|---|
 | `../Dockerfile` (repo root) | Builds `apps/api` into a runnable image. Debian-slim based — see its own comments for why (Alpine hit a real Prisma/OpenSSL engine mismatch, validated and fixed during setup). |
 | `../.dockerignore` (repo root) | Keeps the build context lean. |
-| `docker-compose.prod.yml` | Runs the API container + a Caddy reverse proxy on the Oracle VM. No database container — Postgres is Supabase (external, managed). |
-| `Caddyfile` | Reverse proxy + **automatic HTTPS** (Let's Encrypt) in front of the API. Edit the domain line before first run. |
+| `docker-compose.prod.yml` | Runs the API container on the Oracle VM, listening on port 80 directly. No database container — Postgres is Supabase (external, managed). No local reverse proxy/TLS either — see note below. |
 | `.env.production.example` | Copy to `.env.production` **on the VM** (never commit the filled-in version) and fill in real values — Supabase connection string, Supabase Storage S3 credentials, JWT/cookie secrets, your domains. |
+
+**Why no Caddy/TLS on the VM**: this runs on the Always Free **AMD micro**
+shape (1GB RAM) — the Ampere ARM shape's capacity was exhausted in both
+India regions at setup time, so the much-less-contested AMD shape was used
+instead (see `09-DEPLOYMENT-RUNBOOK.md`). At 1GB, running a second process
+just for TLS termination isn't worth the memory. Instead, **Cloudflare
+terminates HTTPS at its edge** (DNS record set to "Proxied," SSL/TLS mode
+"Flexible") and talks plain HTTP to the VM on port 80. If you later move to
+a bigger instance and want the VM to hold its own certificate instead,
+reintroduce a Caddy service in front of `api` and switch Cloudflare to
+"Full" mode.
 | `deploy.sh` | Run on the VM after SSHing in: `git pull` → rebuild → restart → `prisma migrate deploy` → tail logs. The whole redeploy process, one command. |
 
 ## Quick reference (once everything in the runbook is provisioned)

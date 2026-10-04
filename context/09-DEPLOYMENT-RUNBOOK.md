@@ -16,41 +16,68 @@ setting that does this," not a pixel-perfect map.
 1. Sign up at [cloud.oracle.com](https://cloud.oracle.com) for an **Always
    Free** account. Oracle requires a credit card for identity verification
    even for the free tier — you will not be charged as long as you stay
-   within Always Free limits, but know this going in.
+   within Always Free limits, but know this going in. **Pick Mumbai or
+   Hyderabad as your Home Region carefully at signup** — it cannot be
+   changed later without a new account.
 2. Once in the console, create a **Compute Instance**:
-   - **Region**: pick **Mumbai** or **Hyderabad** (whichever shows capacity
-     — Always Free ARM instances have had availability issues in some
-     regions; if one is full, try the other, or retry the same region
-     later).
    - **Image**: Ubuntu (latest LTS) is the simplest choice.
-   - **Shape**: switch to **Ampere (ARM)**, shape `VM.Standard.A1.Flex`.
-     Always Free covers up to 4 OCPUs + 24GB RAM total — use all of it on
-     this one instance (simplest) unless you have a specific reason to
-     split it into more than one VM.
-   - **Networking**: let it create a new VCN if you don't have one; make
-     sure "Assign a public IPv4 address" is on.
+   - **Shape**: try **Ampere (ARM)** `VM.Standard.A1.Flex` first (4 OCPU/24GB,
+     the bigger Always Free allowance) — but its capacity is heavily
+     contested in Indian regions and creation may fail with "Out of
+     capacity." If it does (repeatedly), switch to **AMD**
+     `VM.Standard.E2.1.Micro` (1 OCPU/1GB) instead — a separate, far less
+     contested capacity pool that provisions instantly. This runbook
+     assumes you may end up on the AMD shape; see the swap-file step below,
+     which matters a lot more at 1GB than at 24GB.
+   - **Networking**: when choosing the subnet, **explicitly pick the one
+     labeled "Public Subnet"** (not "Private Subnet") and confirm "Assign a
+     public IPv4 address" is checked — a private subnet never gets a public
+     IP no matter what else is set. If you still end up with no public IP
+     after creation, fix it without recreating: instance → Resources →
+     Attached VNICs → click it → click the private IP entry → Edit → assign
+     an **Ephemeral Public IP**.
    - **SSH keys**: let Oracle generate a key pair and **download the
      private key immediately** — it's shown once.
 3. Once running, note the instance's **public IP address**.
-4. Open the firewall for HTTP/HTTPS — Oracle has **two** layers to update,
-   both required:
-   - The VCN's **Security List** (or a Network Security Group if you used
-     one): add ingress rules for TCP 80 and TCP 443 from `0.0.0.0/0`.
-   - The instance's own OS firewall (Ubuntu's `iptables`/`ufw`) — Oracle's
-     Ubuntu images ship with restrictive default `iptables` rules even
-     though the cloud-level Security List allows it. SSH in and run:
+4. Open the firewall for HTTP — Oracle has **two** layers to update, both
+   required (we only need port 80 with this setup; see Part 2 for why 443
+   isn't needed on the VM itself):
+   - The VCN's **Security List**: add an ingress rule for TCP **80** from
+     `0.0.0.0/0` (port 22 for SSH is usually already present by default —
+     confirm it is).
+   - The instance's own OS firewall — Oracle's Ubuntu images ship
+     restrictive default `iptables` rules even though the Security List
+     allows it. SSH in and run:
      ```bash
+     sudo apt update
+     sudo apt install -y iptables-persistent   # prompts to save current rules — say yes
      sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
-     sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
-     sudo netfilter-persistent save   # or: sudo apt install iptables-persistent
+     sudo netfilter-persistent save
      ```
-5. SSH in (`ssh -i <downloaded-key> ubuntu@<public-ip>`) and install Docker:
+5. If you're on the 1GB AMD shape, add a swap file — real memory headroom
+   matters a lot more here than on the ARM shape:
    ```bash
-   curl -fsSL https://get.docker.com | sudo sh
-   sudo usermod -aG docker $USER
-   # log out and back in for the group change to take effect
+   sudo fallocate -l 1G /swapfile
+   sudo chmod 600 /swapfile
+   sudo mkswap /swapfile
+   sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   free -h   # confirm swap shows up
    ```
-6. Clone your repo onto the VM (a public repo needs no auth; a private one
+6. Install Docker. The official convenience script
+   (`curl -fsSL https://get.docker.com | sudo sh`) can fail on some
+   Ubuntu/arch combinations trying to install an unrelated optional plugin
+   (`docker-model-plugin`) — if that happens, install from Ubuntu's own
+   repos instead, which is fully sufficient here:
+   ```bash
+   sudo apt update
+   sudo apt install -y docker.io docker-compose-v2
+   sudo usermod -aG docker $USER
+   exit   # log back in for the group change to take effect
+   ```
+   Confirm with `docker ps` (should run with no permission error) after
+   logging back in.
+7. Clone your repo onto the VM (a public repo needs no auth; a private one
    needs a deploy key or a personal access token):
    ```bash
    git clone <your-repo-url> sr-home-tutors
@@ -60,13 +87,25 @@ setting that does this," not a pixel-perfect map.
 ## Part 2 — DNS
 
 Point a subdomain (e.g. `api.yourdomain.com`) at the Oracle VM's public IP
-with an **A record**, wherever your domain's DNS is managed. Caddy (already
-configured in `deploy/Caddyfile`) needs this to resolve *before* it can
-issue a TLS certificate — do this before the first `docker compose up`.
-Don't have a domain yet? You can use the VM's bare IP over plain HTTP
-temporarily to test connectivity, but you'll need a real domain before
-`COOKIE_CROSS_SITE`'s `Secure` cookie requirement and Caddy's automatic
-HTTPS can actually work — get one (any registrar) before going further.
+with an **A record**, wherever your domain's DNS is managed.
+
+**If your DNS is on Cloudflare** (which it will be if you're using
+Cloudflare Pages too) and you're on the 1GB AMD shape without a local
+reverse proxy (see `deploy/README.md`'s note on why there's no Caddy in
+this setup): set this record to **Proxied** (orange cloud), not "DNS
+only." Then in Cloudflare's **SSL/TLS** settings for the domain, set the
+encryption mode to **Flexible** — Cloudflare then terminates HTTPS at its
+own edge and talks plain HTTP to the VM on port 80, so the VM itself never
+needs to manage a certificate at all. This is *different* from the usual
+Cloudflare advice for a server that terminates its own TLS (which would
+want "DNS only" + "Full") — this setup deliberately doesn't do that, to
+save memory on a 1GB instance.
+
+Don't have a domain yet? You can use the VM's bare IP temporarily to test
+connectivity, but you'll need a real domain before `COOKIE_CROSS_SITE`'s
+`Secure` cookie requirement is satisfiable (it needs a real HTTPS origin
+somewhere in the chain, which Cloudflare's edge provides once the domain
+is proxied through it) — get one (any registrar) before going further.
 
 ## Part 3 — Supabase: database + file storage
 
@@ -100,15 +139,14 @@ cp deploy/.env.production.example deploy/.env.production
 nano deploy/.env.production
 ```
 
-Fill in: `APP_URL` (your `api.` subdomain), `WEB_URL` (set after Part 5,
-come back to this), `DATABASE_URL` (Part 3), three separate
-`openssl rand -base64 48` secrets for `JWT_ACCESS_SECRET`/
-`JWT_REFRESH_SECRET`/`COOKIE_SECRET`, `COOKIE_CROSS_SITE=true` (already set
-in the example — leave it), the `S3_*` values (Part 3), and
-`SUPER_ADMIN_EMAIL` (a real email you control).
-
-Also edit `deploy/Caddyfile`, replacing `api.yourdomain.com` with your real
-subdomain.
+Fill in: `APP_URL` (your `api.` subdomain, `https://` — this is the
+*public-facing* URL as seen by browsers/Google OAuth, even though the VM
+itself only serves plain HTTP; Cloudflare is what makes it https, see Part
+2), `WEB_URL` (set after Part 5, come back to this), `DATABASE_URL` (Part
+3), three separate `openssl rand -base64 48` secrets for
+`JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`/`COOKIE_SECRET`,
+`COOKIE_CROSS_SITE=true` (already set in the example — leave it), the
+`S3_*` values (Part 3), and `SUPER_ADMIN_EMAIL` (a real email you control).
 
 Then:
 
@@ -116,11 +154,9 @@ Then:
 ./deploy/deploy.sh
 ```
 
-This builds the image, starts the API + Caddy containers, and runs
-`prisma migrate deploy` to create the schema. Watch the log tail for
-"API listening" and no errors. Caddy will attempt to get a Let's Encrypt
-certificate automatically on first request to your domain over HTTPS —
-give it a minute after DNS propagates.
+This builds the image, starts the API container listening on port 80, and
+runs `prisma migrate deploy` to create the schema. Watch the log tail for
+"API listening" and no errors.
 
 **Seed the real Super Admin login** (one-time): the runtime image only
 contains the compiled `dist/` output, not `tsx` or the `prisma/seed.ts`
