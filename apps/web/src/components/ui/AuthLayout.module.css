@@ -1,0 +1,41 @@
+/*
+ * Shared "centered card on a soft gradient" shell for lightweight
+ * auth-adjacent screens (reset password, Google sign-in completion,
+ * unauthorized/not-found) that don't warrant the LoginPage's full
+ * split-screen brand treatment.
+ */
+.page {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: linear-gradient(180deg, var(--color-primary-50), var(--bg-page) 60%);
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  text-align: left;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

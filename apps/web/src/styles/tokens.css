@@ -1,0 +1,114 @@
+/*
+ * Design tokens — the single source of truth for color/spacing/type used
+ * across components/ui/*. Change the app's look by editing values here,
+ * not by hunting down hardcoded colors in components.
+ */
+:root {
+  /* Brand */
+  --color-primary-50: #eff9fb;
+  --color-primary-100: #d7f0f4;
+  --color-primary-200: #b3e2ea;
+  --color-primary-300: #7fcbda;
+  --color-primary-400: #3fa9c0;
+  --color-primary-500: #1f8aa3;
+  --color-primary-600: #156d85;
+  --color-primary-700: #14586c;
+  --color-primary-800: #16495a;
+  --color-primary-900: #163e4c;
+
+  /* Neutrals */
+  --color-gray-0: #ffffff;
+  --color-gray-50: #f8fafa;
+  --color-gray-100: #eef2f2;
+  --color-gray-200: #dde4e4;
+  --color-gray-300: #c2cccd;
+  --color-gray-400: #96a3a5;
+  --color-gray-500: #6d7a7c;
+  --color-gray-600: #515e60;
+  --color-gray-700: #3c4749;
+  --color-gray-800: #263133;
+  --color-gray-900: #16201f;
+
+  /* Semantic */
+  --color-success-500: #1a8a5f;
+  --color-success-100: #dcf3e8;
+  --color-warning-500: #b9770e;
+  --color-warning-100: #faecd2;
+  --color-danger-500: #c8412f;
+  --color-danger-100: #fbe1dc;
+  --color-info-500: var(--color-primary-500);
+
+  /* Surface roles (light theme) */
+  --bg-page: var(--color-gray-50);
+  --bg-surface: var(--color-gray-0);
+  --bg-surface-raised: var(--color-gray-0);
+  --bg-muted: var(--color-gray-100);
+  --border-default: var(--color-gray-200);
+  --border-strong: var(--color-gray-300);
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-tertiary: var(--color-gray-500);
+  --text-on-primary: #ffffff;
+  --focus-ring: var(--color-primary-400);
+
+  /* Type scale */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(22, 32, 31, 0.06);
+  --shadow-md: 0 4px 12px rgba(22, 32, 31, 0.08);
+  --shadow-lg: 0 12px 32px rgba(22, 32, 31, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}

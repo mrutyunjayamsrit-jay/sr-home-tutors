@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/
+.vscode/*
+!.vscode/extensions.json
+apps/api/generated/
+apps/api/prisma/dev.db
+*.tsbuildinfo
+uploads/

@@ -1,0 +1,88 @@
+.heroCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  padding: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.heroFigure {
+  font-size: 3.25rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: proportional-nums;
+}
+
+.heroLabel {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.meterBlock {
+  flex: 1;
+  min-width: 240px;
+}
+
+.meterTrack {
+  position: relative;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-gray-100);
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+.meterCaption {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.compositionBar {
+  display: flex;
+  height: 28px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-gray-100);
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.legend {
+  display: flex;
+  gap: var(--space-5);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}

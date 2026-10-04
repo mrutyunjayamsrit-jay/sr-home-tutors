@@ -1,0 +1,37 @@
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  max-width: 48ch;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--color-success-500);
+  font-weight: 600;
+}
+
+.errorText {
+  margin: 6px 0 0;
+  color: var(--color-danger-500);
+  font-size: var(--text-sm);
+  max-width: 48ch;
+}

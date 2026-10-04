@@ -1,0 +1,814 @@
+// SR Home Tutors — data model
+// See docs/DATA-MODEL.md for the narrative explanation of these choices.
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" covers wherever `prisma generate` is actually run (Windows/Mac
+  // dev machines, CI); "debian-openssl-3.0.x" is bundled explicitly so the
+  // compiled engine works inside the Dockerfile's node:20-slim (Debian
+  // bookworm) runtime image regardless of what "native" resolves to during
+  // the Docker build stage. (Alpine's musl engine variants were tried
+  // first and hit a real engine/OpenSSL-detection mismatch at container
+  // runtime — Debian-slim avoids that whole class of issue, which is why
+  // the Dockerfile uses node:20-slim rather than node:20-alpine.)
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  BRANCH_ADMIN
+  TUTOR
+  PARENT
+  STUDENT
+}
+
+enum UserStatus {
+  PENDING_ACTIVATION // created by admin, temp password not yet reset
+  ACTIVE
+  DISABLED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum EnquiryStatus {
+  NEW
+  IN_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+enum ProfileStatus {
+  REGISTERED
+  ASSIGNED
+  ACTIVE
+  INACTIVE
+}
+
+enum TeachCategory {
+  PRIMARY
+  HIGHSCHOOL
+  COLLEGE
+  DEGREE
+}
+
+enum Board {
+  STATE
+  CBSE
+  ICSE
+  OTHER
+}
+
+enum AddressProofType {
+  AADHAR
+  VOTER_ID
+  DRIVING_LICENSE
+  PASSPORT
+  OTHER
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  ABSENT_STUDENT
+  ABSENT_TUTOR
+  CANCELLED
+}
+
+// How a class ended up marked — an audit trail across the attendance paths
+// (see docs/DECISIONS.md): office/tutor typed it in by hand, the tutor's
+// GPS was verified against the parent's home location, or (when location
+// wasn't available) the tutor typed their current area and it was checked
+// against the address on file. CLASS_CODE is retired — kept in the enum
+// only so historical rows marked that way still deserialize.
+enum AttendanceMarkMethod {
+  MANUAL
+  CLASS_CODE
+  LOCATION
+  MANUAL_AREA
+}
+
+enum BillingCycle {
+  MONTHLY
+  PACKAGE
+}
+
+enum InvoiceStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum PayoutStatus {
+  PENDING
+  FINALIZED
+  PAID
+}
+
+enum AdjustmentType {
+  BONUS
+  DEDUCTION
+}
+
+enum StaffAttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+}
+
+enum DocumentOwnerType {
+  TUTOR_ENQUIRY
+  PARENT_ENQUIRY
+  TUTOR
+  PARENT
+  STUDENT
+  EXPENSE
+  MATERIAL
+  STUDENT_FEE_INVOICE
+}
+
+enum AnnouncementAudience {
+  ALL
+  TUTORS
+  PARENTS
+  STUDENTS
+  BRANCH_STAFF
+}
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+}
+
+enum QueryTarget {
+  BRANCH
+  SUPER_ADMIN
+}
+
+enum QueryStatus {
+  OPEN
+  ANSWERED
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────────────────
+
+model Branch {
+  id           String   @id @default(cuid())
+  name         String
+  code         String   @unique
+  address      String?
+  contactEmail String?
+  contactPhone String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users           User[]
+  tutorEnquiries  TutorEnquiry[]
+  parentEnquiries ParentEnquiry[]
+  tutors          Tutor[]
+  parents         Parent[]
+  assignments     Assignment[]
+  feeRateCards    FeeRateCard[]
+  staffAttendance StaffAttendance[]
+  expenses        Expense[]
+  announcements   Announcement[]
+  auditLogs       AuditLog[]
+  areas           Area[]
+  tasks           Task[]
+  parentQueries   ParentQuery[]
+
+  @@index([isActive])
+}
+
+model User {
+  id                String     @id @default(cuid())
+  role              Role
+  branchId          String? // null for SUPER_ADMIN
+  // Display name for admin/branch-office logins (SUPER_ADMIN, BRANCH_ADMIN).
+  // Tutor/Parent/Student have their own richer profile tables with `name`
+  // there instead — this field is only meaningfully used for staff logins.
+  name              String?
+  email             String?    @unique
+  username          String?    @unique
+  passwordHash      String?
+  googleSub         String?    @unique
+  status            UserStatus @default(PENDING_ACTIVATION)
+  mustResetPassword Boolean    @default(true)
+  lastLoginAt       DateTime?
+  failedLoginCount  Int        @default(0)
+  lockedUntil       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  branch              Branch?              @relation(fields: [branchId], references: [id])
+  tutorProfile        Tutor?
+  parentProfile       Parent?
+  studentProfile      Student?
+  refreshTokens       RefreshToken[]
+  ruleAcknowledgments RuleAcknowledgment[]
+  notifications       Notification[]
+  auditLogsAsActor    AuditLog[]           @relation("AuditActor")
+
+  @@index([branchId])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Tutors must re-acknowledge institute rules & regulations on every login.
+model RuleAcknowledgment {
+  id             String   @id @default(cuid())
+  userId         String
+  acknowledgedAt DateTime @default(now())
+  ipAddress      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, acknowledgedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CRM funnel: enquiries
+// ─────────────────────────────────────────────────────────────────────────
+
+model TutorEnquiry {
+  id                 String            @id @default(cuid())
+  branchId           String
+  name               String
+  gender             Gender?
+  education          String
+  contactNumber      String
+  presentAddress     String
+  permanentAddress   String?
+  ownsVehicle        Boolean           @default(false)
+  addressProofType   AddressProofType?
+  categories         TeachCategory[]
+  subjectsInterested String[]
+  areasInterested    String[]
+  status             EnquiryStatus     @default(NEW)
+  notes              String?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  tutor  Tutor?
+
+  @@index([branchId, status])
+}
+
+model ParentEnquiry {
+  id                   String            @id @default(cuid())
+  branchId             String
+  studentName          String
+  contactNumber        String
+  studentClass         String
+  board                Board
+  subjectsRequired     String[]
+  presentAddress       String
+  // The neighborhood/locality this enquiry falls in, picked from the Area
+  // list Super Admin maintains for this branch (see the Area model below) —
+  // used for tutor-matching, distinct from presentAddress's street-level
+  // detail. Free-form still (not an FK): a picked value is just that area's
+  // name, so it keeps working even if the Area row is later removed.
+  area                 String?
+  // The parent's preference for their child's tutor, if any — surfaced to
+  // the office during Assign Tutor matching (see enquiries.service.ts
+  // convertParentEnquiry, which carries it onto Student). No preference is
+  // a perfectly normal answer, so this stays optional throughout.
+  preferredTutorGender Gender?
+  // Best-effort GPS captured from the parent's own device on the public
+  // "Request a Tutor" form — optional, since a public visitor can decline
+  // the browser permission prompt. Carried over to Parent on conversion
+  // (see enquiries.service.ts convertParentEnquiry).
+  latitude             Decimal?          @db.Decimal(9, 6)
+  longitude            Decimal?          @db.Decimal(9, 6)
+  addressProofType     AddressProofType?
+  feesPrescribed       Decimal?          @db.Decimal(10, 2)
+  // What the branch office actually agreed with the parent — may differ
+  // from feesPrescribed (the rate-card-derived starting figure) once
+  // negotiated. Surfaced to Super Admin in Reports (see
+  // reports.service.ts's parentEnquiryFees) alongside the prescribed
+  // figure so the gap is visible, not just the final number.
+  agreedFinalFees      Decimal?          @db.Decimal(10, 2)
+  parentQueries        String?
+  status               EnquiryStatus     @default(NEW)
+  createdById          String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  branch Branch  @relation(fields: [branchId], references: [id])
+  parent Parent?
+
+  @@index([branchId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Master data — Super Admin-maintained option lists that feed the tutor
+// and parent enquiry forms' Subjects/Areas pickers (see master-data module).
+// Deliberately NOT foreign-keyed from TutorEnquiry.subjectsInterested etc.:
+// those stay plain string arrays, so a value picked from here keeps working
+// even if the row backing it is later removed.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+// "Areas of a particular location" — scoped to one branch, since a branch
+// already represents one service location/city and its areas are only
+// ever meaningful relative to that branch.
+model Area {
+  id        String   @id @default(cuid())
+  branchId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, name])
+  @@index([branchId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Registered profiles
+// ─────────────────────────────────────────────────────────────────────────
+
+model Tutor {
+  id            String          @id @default(cuid())
+  branchId      String
+  userId        String?         @unique
+  enquiryId     String?         @unique
+  name          String
+  gender        Gender?
+  education     String
+  contactNumber String
+  address       String
+  ownsVehicle   Boolean         @default(false)
+  categories    TeachCategory[]
+  subjects      String[]
+  areas         String[]
+  status        ProfileStatus   @default(REGISTERED)
+  startedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  branch      Branch        @relation(fields: [branchId], references: [id])
+  user        User?         @relation(fields: [userId], references: [id])
+  enquiry     TutorEnquiry? @relation(fields: [enquiryId], references: [id])
+  assignments Assignment[]
+  payouts     TutorPayout[]
+
+  @@index([branchId, status])
+}
+
+model Parent {
+  id                String        @id @default(cuid())
+  branchId          String
+  userId            String?       @unique
+  enquiryId         String?       @unique
+  name              String
+  contactNumber     String
+  address           String
+  // Carried over from ParentEnquiry.area at conversion (see
+  // enquiries.service.ts convertParentEnquiry) — same free-form, non-FK
+  // area name used for tutor-matching.
+  area              String?
+  // Home location for tutor location-verified attendance (see
+  // attendance.service.ts markWithLocation) — set either from the public
+  // enquiry form's best-effort capture at registration, or self-service by
+  // the parent from their own dashboard (the more reliable source, since
+  // it's captured on the parent's own device, at their own home).
+  latitude          Decimal?      @db.Decimal(9, 6)
+  longitude         Decimal?      @db.Decimal(9, 6)
+  locationUpdatedAt DateTime?
+  status            ProfileStatus @default(REGISTERED)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  branch   Branch         @relation(fields: [branchId], references: [id])
+  user     User?          @relation(fields: [userId], references: [id])
+  enquiry  ParentEnquiry? @relation(fields: [enquiryId], references: [id])
+  students Student[]
+
+  @@index([branchId, status])
+}
+
+model Student {
+  id                   String        @id @default(cuid())
+  parentId             String
+  userId               String?       @unique
+  name                 String
+  studentClass         String
+  board                Board
+  subjectsNeeded       String[]
+  // Carried over from the parent enquiry at registration (see
+  // enquiries.service.ts convertParentEnquiry) — referenced by the office
+  // during Assign Tutor matching. Optional; no preference is normal.
+  preferredTutorGender Gender?
+  classStartedAt       DateTime?
+  status               ProfileStatus @default(REGISTERED)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  parent      Parent              @relation(fields: [parentId], references: [id])
+  user        User?               @relation(fields: [userId], references: [id])
+  assignments Assignment[]
+  invoices    StudentFeeInvoice[]
+
+  @@index([parentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Matching & delivery
+// ─────────────────────────────────────────────────────────────────────────
+
+model Assignment {
+  id                   String           @id @default(cuid())
+  branchId             String
+  tutorId              String
+  studentId            String
+  subjects             String[]
+  perClassRate         Decimal          @db.Decimal(10, 2)
+  fixedClassesPerMonth Int
+  fixedSalary          Decimal?         @db.Decimal(10, 2)
+  classDurationMinutes Int
+  daysOfWeek           Int[] // 0=Sun..6=Sat
+  timeSlotStart        String // "HH:mm" 24h stored, displayed 12h per spec
+  timeSlotEnd          String
+  startDate            DateTime
+  endDate              DateTime?
+  status               AssignmentStatus @default(ACTIVE)
+  createdById          String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  branch      Branch               @relation(fields: [branchId], references: [id])
+  tutor       Tutor                @relation(fields: [tutorId], references: [id])
+  student     Student              @relation(fields: [studentId], references: [id])
+  sessions    ClassSession[]
+  testResults TestResult[]
+  reviews     TutorStudentReview[]
+
+  @@index([branchId, status])
+  @@index([tutorId])
+  @@index([studentId])
+}
+
+model ClassSession {
+  id                      String                @id @default(cuid())
+  assignmentId            String
+  scheduledDate           DateTime
+  scheduledStart          DateTime
+  scheduledEnd            DateTime
+  tutorCheckIn            DateTime?
+  tutorCheckOut           DateTime?
+  actualDurationMinutes   Int?
+  status                  SessionStatus         @default(SCHEDULED)
+  chaptersCovered         String?
+  topicsCovered           String?
+  // Location-verified attendance: the tutor's GPS position at the moment
+  // they marked the class, and its distance from the parent's home — kept
+  // as the audit record backing the mark (see attendance.service.ts
+  // markWithLocation). Null for classes marked by any other method.
+  markMethod              AttendanceMarkMethod?
+  tutorMarkLatitude       Decimal?              @db.Decimal(9, 6)
+  tutorMarkLongitude      Decimal?              @db.Decimal(9, 6)
+  tutorMarkDistanceMeters Int?
+  // Fallback when GPS isn't available: the tutor types their current area
+  // and it's checked (not GPS-verified, just text-matched) against the
+  // parent's address on file — see attendance.service.ts markWithManualArea.
+  manualAreaText          String?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, scheduledDate])
+}
+
+model TestResult {
+  id            String   @id @default(cuid())
+  assignmentId  String
+  subject       String
+  topic         String
+  totalMarks    Decimal  @db.Decimal(6, 2)
+  obtainedMarks Decimal  @db.Decimal(6, 2)
+  testDate      DateTime
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, subject])
+}
+
+model TutorStudentReview {
+  id            String   @id @default(cuid())
+  assignmentId  String
+  strengths     String?
+  weaknesses    String?
+  overallReview String?
+  reviewedAt    DateTime @default(now())
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Money
+// ─────────────────────────────────────────────────────────────────────────
+
+model FeeRateCard {
+  id            String       @id @default(cuid())
+  branchId      String
+  board         Board
+  classCategory String // e.g. "1-5", "6-10", "11-12", "College"
+  ratePerClass  Decimal      @db.Decimal(10, 2)
+  billingCycle  BillingCycle @default(MONTHLY)
+  effectiveFrom DateTime     @default(now())
+  createdById   String
+  createdAt     DateTime     @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, board, classCategory])
+}
+
+model StudentFeeInvoice {
+  id            String        @id @default(cuid())
+  studentId     String
+  period        String // "2026-08" for monthly, or package identifier
+  fixedClasses  Int
+  classesTaken  Int           @default(0)
+  fixedFees     Decimal       @db.Decimal(10, 2)
+  payableFees   Decimal       @db.Decimal(10, 2)
+  paidAmount    Decimal       @default(0) @db.Decimal(10, 2)
+  balance       Decimal       @db.Decimal(10, 2)
+  dueDate       DateTime
+  paidAt        DateTime?
+  paymentMethod String?
+  status        InvoiceStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, period])
+}
+
+model TutorPayout {
+  id            String       @id @default(cuid())
+  tutorId       String
+  period        String
+  fixedClasses  Int
+  classesTaken  Int          @default(0)
+  perClassRate  Decimal      @db.Decimal(10, 2)
+  baseAmount    Decimal      @db.Decimal(10, 2)
+  payableAmount Decimal      @db.Decimal(10, 2)
+  status        PayoutStatus @default(PENDING)
+  finalizedAt   DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tutor       Tutor              @relation(fields: [tutorId], references: [id])
+  adjustments PayoutAdjustment[]
+
+  @@unique([tutorId, period])
+}
+
+model PayoutAdjustment {
+  id            String         @id @default(cuid())
+  tutorPayoutId String
+  type          AdjustmentType
+  amount        Decimal        @db.Decimal(10, 2)
+  reason        String
+  createdById   String
+  createdAt     DateTime       @default(now())
+
+  tutorPayout TutorPayout @relation(fields: [tutorPayoutId], references: [id])
+
+  @@index([tutorPayoutId])
+}
+
+model StaffAttendance {
+  id            String                @id @default(cuid())
+  branchId      String
+  staffUserId   String
+  date          DateTime
+  loginAt       DateTime?
+  logoutAt      DateTime?
+  status        StaffAttendanceStatus @default(PRESENT)
+  payableAmount Decimal?              @db.Decimal(10, 2)
+  createdAt     DateTime              @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([staffUserId, date])
+  @@index([branchId, date])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  branchId    String
+  category    String
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  expenseDate DateTime
+  createdById String
+  createdAt   DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, expenseDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Content & comms
+// ─────────────────────────────────────────────────────────────────────────
+
+// Polymorphic by convention (ownerType + ownerId), NOT a Prisma/DB-level
+// relation: Postgres can't enforce a single FK column against five different
+// target tables. Referential integrity for Documents is enforced in the
+// service layer (verify the owner row exists before insert; cascade-delete
+// application-side). This is a deliberate, documented tradeoff — see
+// docs/DATA-MODEL.md.
+model Document {
+  id           String            @id @default(cuid())
+  ownerType    DocumentOwnerType
+  ownerId      String
+  docType      String // e.g. "AADHAR", "STUDY_MATERIAL"
+  storageKey   String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  createdAt    DateTime          @default(now())
+
+  @@index([ownerType, ownerId])
+}
+
+model Announcement {
+  id            String               @id @default(cuid())
+  branchId      String? // null = global (super admin)
+  title         String
+  body          String
+  audience      AnnouncementAudience @default(ALL)
+  category      String? // e.g. "REFERRAL_BONUS" — lets the Refer pages surface just the relevant announcements as a banner
+  publishedById String
+  publishedAt   DateTime             @default(now())
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, audience, publishedAt])
+}
+
+// A Super Admin-assigned task for one branch — surfaced on that branch's
+// dashboard, and the completion is surfaced back to Super Admin. Unlike
+// Announcement (broadcast, read-only), a Task always targets exactly one
+// branch and carries real status the branch office acts on.
+model Task {
+  id            String     @id @default(cuid())
+  branchId      String
+  title         String
+  description   String?
+  dueDate       DateTime?
+  status        TaskStatus @default(PENDING)
+  createdById   String
+  completedById String?
+  completedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, status])
+}
+
+// A parent's question, addressed either to their own branch office or
+// straight to Super Admin — the target determines who is notified and who
+// may answer (see parent-queries.service.ts): a Branch Admin only ever
+// sees/answers BRANCH-targeted queries for their own branch, while Super
+// Admin sees and can answer everything, same oversight pattern as
+// Announcements/Tasks. The answer (once given) is what the parent sees
+// back — there's no back-and-forth thread, just ask → notify → answer →
+// notify, mirroring how Task assignment/completion works.
+model ParentQuery {
+  id           String      @id @default(cuid())
+  branchId     String
+  askedById    String // the parent's own User.id (role PARENT)
+  target       QueryTarget
+  subject      String
+  message      String
+  status       QueryStatus @default(OPEN)
+  answer       String?
+  answeredById String?
+  answeredAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, target, status])
+  @@index([askedById])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  // Lets system-generated notifications (attendance reminders/escalations,
+  // see notifications.service.ts) be created idempotently via upsert —
+  // e.g. "attendance-reminder:{userId}:{date}" — so a page reload doesn't
+  // spawn a duplicate for the same day. Null for anything hand-created.
+  dedupeKey String?   @unique
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Governance
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  branchId    String?
+  action      String
+  entityType  String
+  entityId    String
+  beforeJson  Json?
+  afterJson   Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  actor  User?   @relation("AuditActor", fields: [actorUserId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([branchId, createdAt])
+}
+
+// Single-row settings table (id is always the literal "singleton" — enforced
+// by application code always reading/writing that id, not a DB constraint,
+// since Postgres has no native "exactly one row" constraint short of a
+// trigger). Holds organization-wide config a Super Admin should be able to
+// change without a developer: identity/contact shown across the app, and
+// the institute rules & regulations text tutors must acknowledge at login
+// (see RuleAcknowledgment) — previously that text had no editable home.
+model OrgSettings {
+  id               String   @id @default("singleton")
+  organizationName String   @default("SR Home Tutors")
+  supportEmail     String?
+  supportPhone     String?
+  tutorRulesText   String   @default("I obey the rules and regulations of SR Home Tutors and all criteria of the institute.")
+  updatedById      String?
+  updatedAt        DateTime @updatedAt
+}

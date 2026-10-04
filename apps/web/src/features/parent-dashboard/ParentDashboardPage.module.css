@@ -1,0 +1,110 @@
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-8) var(--space-8);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-700));
+  color: #fff;
+  margin-bottom: var(--space-6);
+}
+
+.heroGreeting {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+}
+
+.heroSub {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: var(--text-base);
+}
+
+.heroChildName {
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  margin: 0;
+}
+
+.heroChildMeta {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: var(--text-sm);
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sectionTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 var(--space-3);
+}
+
+.sectionTitle h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.classRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.classRow + .classRow {
+  margin-top: var(--space-2);
+}
+
+.tutorCard {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.tutorAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--color-primary-200);
+  color: var(--color-primary-800);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  flex-shrink: 0;
+}
+
+.announcementItem {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.announcementItem:last-child {
+  border-bottom: none;
+}
