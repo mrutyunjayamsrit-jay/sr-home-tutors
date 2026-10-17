@@ -3,8 +3,8 @@ import { api, ApiError } from "@/lib/apiClient";
 import type { BranchOverviewRow, StaffAttendanceRecord } from "./types";
 
 export interface CheckTimeInput {
-  time: string;
-  date?: string;
+  /** A full ISO instant, constructed client-side from the browser's own local time — never a bare "HH:mm" (see staff-attendance.types.ts on the API side for why that was a real bug). */
+  at: string;
 }
 
 export function useTodayAttendance() {

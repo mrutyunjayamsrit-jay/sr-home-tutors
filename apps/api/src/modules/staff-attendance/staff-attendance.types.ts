@@ -1,12 +1,14 @@
 import { z } from "zod";
 
-const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
+// `at` is a full instant (ISO datetime), constructed client-side from the
+// browser's own local time — never a bare "HH:mm" reconstructed
+// server-side (see common/utils/istDate.ts for why that was a real bug).
+// The client still lets a branch admin pick a time other than "now" (to
+// back-fill a day they forgot), it just always sends the complete,
+// unambiguous instant rather than a string the server would have to guess
+// a timezone for.
 export const checkTimeSchema = z.object({
-  // Defaults to today — lets a branch admin back-fill a day they forgot,
-  // not just mark the current moment.
-  date: z.coerce.date().optional(),
-  time: z.string().regex(TIME_RE, "Use 24h HH:mm"),
+  at: z.coerce.date(),
 });
 export type CheckTimeInput = z.infer<typeof checkTimeSchema>;
 

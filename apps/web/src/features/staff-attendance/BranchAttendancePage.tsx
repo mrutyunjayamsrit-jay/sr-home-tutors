@@ -41,7 +41,7 @@ export function BranchAttendancePage() {
 
   const handleCheckIn = async () => {
     try {
-      await checkIn.mutateAsync({ time: checkInTime });
+      await checkIn.mutateAsync({ at: combineTodayTime(checkInTime).toISOString() });
       toast.success("Checked in for today");
       setEditingIn(false);
     } catch (err) {
@@ -58,7 +58,7 @@ export function BranchAttendancePage() {
       }
     }
     try {
-      await checkOut.mutateAsync({ time: checkOutTime });
+      await checkOut.mutateAsync({ at: combineTodayTime(checkOutTime).toISOString() });
       toast.success("Checked out for today");
       setEditingOut(false);
     } catch (err) {

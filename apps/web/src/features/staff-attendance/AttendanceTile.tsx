@@ -34,7 +34,7 @@ export function AttendanceTile() {
 
   const handleCheckIn = async () => {
     try {
-      await checkIn.mutateAsync({ time: checkInTime });
+      await checkIn.mutateAsync({ at: combineTodayTime(checkInTime).toISOString() });
       toast.success("Checked in for today");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not check in");
@@ -50,7 +50,7 @@ export function AttendanceTile() {
       }
     }
     try {
-      await checkOut.mutateAsync({ time: checkOutTime });
+      await checkOut.mutateAsync({ at: combineTodayTime(checkOutTime).toISOString() });
       toast.success("Checked out for today");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not check out");

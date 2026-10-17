@@ -1,25 +1,13 @@
 import { prisma } from "@/common/prisma";
 import { ForbiddenError, ValidationError } from "@/common/errors/AppError";
 import { MIN_CHECKOUT_GAP_MINUTES } from "@/common/constants/attendance";
+import { istStartOfDay, istEndOfDay, istFirstOfMonth } from "@/common/utils/istDate";
 import type { CheckTimeInput } from "./staff-attendance.types";
 
 interface Actor {
   id: string;
   role: string;
   branchId: string | null;
-}
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-function endOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-function combineDateAndTime(date: Date, hhmm: string): Date {
-  const [h, m] = hhmm.split(":").map(Number);
-  const combined = new Date(date);
-  combined.setHours(h ?? 0, m ?? 0, 0, 0);
-  return combined;
 }
 
 /**
@@ -32,8 +20,8 @@ function combineDateAndTime(date: Date, hhmm: string): Date {
 export const staffAttendanceService = {
   async checkIn(input: CheckTimeInput, actor: Actor) {
     if (!actor.branchId) throw new ForbiddenError("Your account isn't attached to a branch");
-    const date = startOfDay(input.date ?? new Date());
-    const loginAt = combineDateAndTime(date, input.time);
+    const loginAt = input.at;
+    const date = istStartOfDay(loginAt);
 
     return prisma.staffAttendance.upsert({
       where: { staffUserId_date: { staffUserId: actor.id, date } },
@@ -44,8 +32,8 @@ export const staffAttendanceService = {
 
   async checkOut(input: CheckTimeInput, actor: Actor) {
     if (!actor.branchId) throw new ForbiddenError("Your account isn't attached to a branch");
-    const date = startOfDay(input.date ?? new Date());
-    const logoutAt = combineDateAndTime(date, input.time);
+    const logoutAt = input.at;
+    const date = istStartOfDay(logoutAt);
 
     const existing = await prisma.staffAttendance.findUnique({ where: { staffUserId_date: { staffUserId: actor.id, date } } });
     if (!existing || !existing.loginAt) {
@@ -70,16 +58,16 @@ export const staffAttendanceService = {
   },
 
   async getToday(actor: Actor) {
-    const date = startOfDay(new Date());
+    const date = istStartOfDay(new Date());
     return prisma.staffAttendance.findUnique({ where: { staffUserId_date: { staffUserId: actor.id, date } } });
   },
 
   /** Own history — lets a branch admin see (and spot gaps in) their own recent record, defaulting to the current month. */
   async listMine(params: { from?: Date; to?: Date }, actor: Actor) {
     const to = params.to ?? new Date();
-    const from = params.from ?? new Date(to.getFullYear(), to.getMonth(), 1);
+    const from = params.from ?? istFirstOfMonth(to);
     return prisma.staffAttendance.findMany({
-      where: { staffUserId: actor.id, date: { gte: startOfDay(from), lte: endOfDay(to) } },
+      where: { staffUserId: actor.id, date: { gte: istStartOfDay(from), lte: istEndOfDay(to) } },
       orderBy: { date: "desc" },
     });
   },
@@ -91,7 +79,7 @@ export const staffAttendanceService = {
    */
   async overview(params: { date?: Date }, actor: Actor) {
     if (actor.role !== "SUPER_ADMIN") throw new ForbiddenError("Only Super Admin can view this");
-    const date = startOfDay(params.date ?? new Date());
+    const date = istStartOfDay(params.date ?? new Date());
 
     const branches = await prisma.branch.findMany({
       where: { isActive: true },

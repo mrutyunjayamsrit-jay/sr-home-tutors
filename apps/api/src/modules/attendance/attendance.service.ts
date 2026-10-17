@@ -5,6 +5,7 @@ import { assertParentOwnsStudent, getOwnChildIds } from "@/common/access/family"
 import { haversineDistanceMeters } from "@/common/utils/geo";
 import { areaLooksLikeMatch } from "@/common/utils/textMatch";
 import { MIN_CHECKOUT_GAP_MINUTES } from "@/common/constants/attendance";
+import { istStartOfDay, istEndOfDay } from "@/common/utils/istDate";
 import type { LocationCoordsInput, ManualAreaInput, MarkSessionInput } from "./attendance.types";
 import type { Prisma } from "@prisma/client";
 
@@ -25,12 +26,9 @@ async function resolveStudentScope(actor: Actor, requestedStudentId: string | un
   return { assignment: { studentId: { in: childIds } } };
 }
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-function endOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
+// IST-aware, not server-local — see common/utils/istDate.ts. "Today"/"this
+// date" for a class-attendance listing always means the IST calendar day,
+// regardless of what timezone the server process happens to run in.
 
 /**
  * Loads a session for a tutor-initiated check-in/check-out and runs the
@@ -108,10 +106,10 @@ export const attendanceService = {
   ) {
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
     const range = params.date
-      ? { gte: startOfDay(params.date), lte: endOfDay(params.date) }
+      ? { gte: istStartOfDay(params.date), lte: istEndOfDay(params.date) }
       : params.from || params.to
-        ? { ...(params.from ? { gte: startOfDay(params.from) } : {}), ...(params.to ? { lte: endOfDay(params.to) } : {}) }
-        : { gte: startOfDay(new Date()), lte: endOfDay(new Date()) }; // default: today
+        ? { ...(params.from ? { gte: istStartOfDay(params.from) } : {}), ...(params.to ? { lte: istEndOfDay(params.to) } : {}) }
+        : { gte: istStartOfDay(new Date()), lte: istEndOfDay(new Date()) }; // default: today
 
     const studentScope = await resolveStudentScope(actor, params.studentId);
     // A tutor only ever sees their own sessions — never the rest of the

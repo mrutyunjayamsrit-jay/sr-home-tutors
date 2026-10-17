@@ -1,19 +1,12 @@
 import { prisma } from "@/common/prisma";
 import { NotFoundError, ForbiddenError } from "@/common/errors/AppError";
 import { SHORT_CLASS_ESCALATION_COUNT, SHORT_CLASS_THRESHOLD_MINUTES } from "@/common/constants/attendance";
+import { istStartOfDay, istFirstOfMonth, istDateParts, istDateKey, formatIstDate } from "@/common/utils/istDate";
 
 interface Actor {
   id: string;
   role: string;
   branchId: string | null;
-}
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 /**
@@ -22,8 +15,8 @@ function formatDate(d: Date): string {
  * notifications list all day doesn't spawn duplicates.
  */
 async function ensureOwnAttendanceReminder(actor: Actor) {
-  const today = startOfDay(new Date());
-  const dedupeKey = `attendance-reminder:${actor.id}:${today.toISOString().slice(0, 10)}`;
+  const today = istStartOfDay(new Date());
+  const dedupeKey = `attendance-reminder:${actor.id}:${istDateKey(today)}`;
   const record = await prisma.staffAttendance.findUnique({
     where: { staffUserId_date: { staffUserId: actor.id, date: today } },
   });
@@ -41,7 +34,7 @@ async function ensureOwnAttendanceReminder(actor: Actor) {
       userId: actor.id,
       type: "ATTENDANCE_REMINDER",
       title: "Mark your attendance",
-      body: `You haven't checked in yet today (${formatDate(today)}).`,
+      body: `You haven't checked in yet today (${formatIstDate(today)}).`,
       dedupeKey,
     },
   });
@@ -67,22 +60,24 @@ async function ensureBranchMissedEscalations() {
   });
   if (branches.length === 0) return;
 
-  const today = startOfDay(new Date());
+  const today = istStartOfDay(new Date());
   const LOOKBACK_DAYS = 7;
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
   for (let i = 1; i <= LOOKBACK_DAYS; i++) {
-    const day = new Date(today);
-    day.setDate(day.getDate() - i);
+    // Flat ms step off the already-correct IST-midnight anchor — India has
+    // no DST, so this is always exactly one IST calendar day back.
+    const day = new Date(today.getTime() - i * DAY_MS);
 
     for (const branch of branches) {
       if (branch.users.length === 0) continue; // no admin assigned yet — nothing to expect
-      if (startOfDay(branch.createdAt) > day) continue; // branch didn't exist yet on that day
+      if (istStartOfDay(branch.createdAt) > day) continue; // branch didn't exist yet on that day
 
       const anyMarked = await prisma.staffAttendance.findFirst({
         where: { staffUserId: { in: branch.users.map((u) => u.id) }, date: day, loginAt: { not: null } },
         select: { id: true },
       });
-      const dateKey = day.toISOString().slice(0, 10);
+      const dateKey = istDateKey(day);
       if (anyMarked) {
         // The branch backfilled this day after being flagged — clear any
         // escalations already sent so they don't sit around as stale.
@@ -99,7 +94,7 @@ async function ensureBranchMissedEscalations() {
             userId: admin.id,
             type: "BRANCH_ATTENDANCE_MISSED",
             title: "Branch attendance missed",
-            body: `${branch.name} did not check in on ${formatDate(day)}.`,
+            body: `${branch.name} did not check in on ${formatIstDate(day)}.`,
             dedupeKey,
           },
         });
@@ -124,8 +119,9 @@ async function ensureShortClassEscalations() {
   if (superAdmins.length === 0) return;
 
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const { year, month } = istDateParts(now);
+  const monthStart = istFirstOfMonth(now);
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
 
   const shortSessions = await prisma.classSession.findMany({
     where: {

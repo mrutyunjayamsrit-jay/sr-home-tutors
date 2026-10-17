@@ -35,22 +35,25 @@ page) already correctly does. Worth fixing once — see
 `06-REBRANDING-CHECKLIST.md` — so every future customer's rebrand is purely
 a Settings-page edit for *this* part too, not a code change.
 
-## 3. Reports date-range timezone edge case
+## 3. Reports date-range timezone edge case — RESOLVED
 
-`reportQuerySchema`'s `to` field is parsed as a plain ISO date, which
-`z.coerce.date()` resolves to **UTC midnight**. On a system in a
-positive-UTC-offset timezone (this app runs in IST, UTC+5:30), a record
-created "today" (local time) but after that UTC midnight boundary can fall
-just outside a same-day report's `to` filter until the UTC day rolls over.
-Affects every report tab equally (Tutor Attendance/Payments, Student
-Attendance/Fees, Parent Enquiry Fees, and the new tutor/student detail
-dialogs) — not a regression in any one feature, a pre-existing property of
-how the date range is parsed. Not fixed because it's shared logic touching
-five report types and wasn't the specific thing asked for when found — a
-reasonable real fix would be treating `to` as "end of that day" (either
-`to + 1 day` with `lt` instead of `lte`, or parsing it in the server's
-configured timezone) applied consistently across `reports.repository.ts`'s
-date-range queries.
+~~Was~~: `reportQuerySchema`'s `from`/`to` fields parsed a plain
+`"YYYY-MM-DD"` query param (what every `<input type="date">` on the
+Reports page sends) as **UTC midnight** via plain `z.coerce.date()`. On
+this IST (UTC+5:30) server, that boundary sits 5.5 hours before the actual
+start/end of that day in India — a same-day record created later in the
+IST day could fall just outside a report's `to` filter until the UTC day
+rolled over. Affected every report tab (Tutor Attendance/Payments,
+Student Attendance/Fees, Parent Enquiry Fees, the tutor/student detail
+dialogs) and the tutor-payout `markTutorPaidSchema`. **Now fixed** —
+`reportQuerySchema`/`markTutorPaidSchema`/`detailQuerySchema` (all in
+`reports.types.ts`) pipe `from`/`to` through `common/utils/istDate.ts`'s
+`istStartOfDay`/`istEndOfDay` via a zod `.transform()`, so every consumer
+of these schemas gets the correct IST day boundary automatically. Verified
+live under `TZ=UTC` (reproducing the Oracle VM's condition): parsing
+`{from: "2026-10-17", to: "2026-10-17"}` correctly resolved to
+`2026-10-16T18:30:00.000Z`–`2026-10-17T18:29:59.999Z` (exactly midnight to
+23:59:59 IST on Oct 17), not the UTC day.
 
 ## 4. Frontend bundle size
 
@@ -143,3 +146,87 @@ that note was written; don't assume either way without checking.
   to shrink the image, expect this exact failure to come back — validate
   a real containerized login, not just a successful `docker build`, before
   trusting an Alpine-based change here.
+- **Tutor/staff check-in times were off by exactly 5.5 hours in
+  production.** `staff-attendance.service.ts` used to reconstruct a
+  check-in `Date` server-side from a bare `"HH:mm"` string the client sent
+  (`combined.setHours(h, m, 0, 0)`), and separately bucketed "which day"
+  an attendance row belongs to via `new Date(d.getFullYear(), d.getMonth(),
+  d.getDate())` — both of these interpret their inputs in the **server
+  process's own OS timezone**, not any fixed zone. On the dev machine
+  (coincidentally set to IST) this looked correct; on the Oracle Cloud VM
+  (which defaults to UTC like most fresh cloud images) the exact same code
+  silently shifted every check-in time forward by 5.5 hours and could
+  bucket a late-night check-in onto the wrong calendar day — this is
+  specifically what surfaced as a tutor-facing complaint after deploying.
+  `attendance.service.ts`'s class-session date filtering had the identical
+  latent bug (same `getFullYear()`/`setHours()` pattern), just not yet
+  reported since typical class hours sit comfortably away from the
+  IST/UTC midnight boundary. Fixed by: (1) adding
+  `common/utils/istDate.ts` (`istStartOfDay`/`istEndOfDay`/
+  `istFirstOfMonth`), which computes IST calendar-day boundaries via
+  explicit offset math, never local `Date` getters/setters; (2) having the
+  client send a full ISO instant (`at`, built from the browser's own local
+  time — the browser's OS timezone is the only one that's actually
+  relevant here, since it's the person's own device) instead of a bare
+  `"HH:mm"` the server would have to guess a timezone for, mirroring the
+  pattern `MarkSessionDialog.tsx`'s office-manual-entry flow already used
+  safely. Verified live by running the compiled server with `TZ=UTC`
+  (deliberately reproducing the Oracle VM's condition) and confirming a
+  real check-in's stored `loginAt` exactly matched the instant sent, with
+  the row correctly bucketed onto the IST calendar day. **If a future
+  change reintroduces `new Date(d.getFullYear(), d.getMonth(), ...)` or
+  `date.setHours(...)` anywhere time/day math is done server-side, this
+  bug (or its day-bucketing sibling) comes back** — route any new
+  "what day is this" or "combine a time with today" logic through
+  `istDate.ts` instead, and never accept a bare time-of-day string from
+  a client when a full instant will do.
+
+  **Follow-up sweep** (same root cause, found by grepping the whole API
+  for `getFullYear()`/`setHours()`/`getDate()`/`getMonth()`/`getDay()`/
+  `toLocaleDateString` after the above was reported — the user explicitly
+  asked for every similar instance to be found and fixed, not just the
+  one reported): three more real occurrences existed, now all fixed the
+  same way:
+  - **`session-generator.ts`** — the most consequential one. Every newly
+    generated `ClassSession`'s `scheduledStart`/`scheduledEnd` was built
+    via the identical `date.setHours(h, m, 0, 0)` pattern from an
+    assignment's `timeSlotStart`/`timeSlotEnd` — meaning **every class
+    created while the server ran in UTC got scheduled 5.5 hours off**,
+    not just attendance logging. Its weekly-recurrence day-iteration
+    (`cursor`/`end` via local `getFullYear()`/`getMonth()`/`getDate()`,
+    stepped via local `setDate()`) had a narrower but real edge case too:
+    a Branch Admin creating an assignment between 18:30–23:59 UTC
+    (00:00–05:29 IST, i.e. very late IST evening/early morning) could
+    have the whole recurrence pattern start one calendar day off. Fixed
+    using new `istDayOfWeek`/`istNextDay`/`istCombineDateAndTime`
+    additions to `istDate.ts`. Verified live under `TZ=UTC`: a
+    4:00 PM–5:20 PM IST weekly class now generates sessions at exactly
+    4:00 PM/5:20 PM IST, not 9:30 PM/10:50 PM.
+  - **`auth.service.ts`'s `hasAcknowledgedRulesToday`** — compared the
+    rule-acknowledgment's local calendar fields against "today"'s local
+    fields, so the daily tutor rules-gate's "already acknowledged today"
+    check used the server's day, not IST's — could wrongly skip
+    re-prompting (or wrongly re-prompt) right around the IST/UTC midnight
+    gap. Fixed with a single `istStartOfDay(...).getTime() ===
+    istStartOfDay(...).getTime()` comparison.
+  - **`notifications.service.ts`** — all three lazily-materialized
+    reminder/escalation functions (`ensureOwnAttendanceReminder`,
+    `ensureBranchMissedEscalations`, `ensureShortClassEscalations`) had
+    their own local `startOfDay`, plus a `formatDate` that called
+    `toLocaleDateString("en-IN", ...)` **without** an explicit `timeZone`
+    — the `en-IN` locale controls date *formatting conventions* (day/
+    month order, etc.), not which timezone the date is read in, so this
+    displayed the server's own day even with an India locale string.
+    Dedupe-key date labels (`day.toISOString().slice(0, 10)`) had the
+    same mislabeling issue — functionally harmless (still a stable,
+    unique key) but confusing to read. Fixed by routing all of it through
+    `istStartOfDay`/`istFirstOfMonth`/the new `istDateKey`/`formatIstDate`
+    helpers.
+  - **Reports date-range** (`reportQuerySchema`/`markTutorPaidSchema`/
+    `detailQuerySchema`) — see item #3 above, now resolved the same way.
+
+  Nothing else in the API matched this pattern as of this sweep (the only
+  remaining `getFullYear`/`setHours`/etc. hits are inside `istDate.ts`
+  itself, which is the one place that's supposed to do this math, and in
+  comments). If a future grep for these turns up something new outside
+  `istDate.ts`, treat it as this exact bug until proven otherwise.

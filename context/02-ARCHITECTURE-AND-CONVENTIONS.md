@@ -141,6 +141,20 @@ context/                     # THIS folder
    at boot), never `process.env` directly elsewhere. Secrets have no
    fallback in production — the process calls `process.exit(1)` on invalid
    config rather than booting insecurely. See `07-DEPLOYMENT.md`.
+10. **"What day is this?" is never server-local time.** This app is
+    India-only — use `common/utils/istDate.ts`'s `istStartOfDay`/
+    `istEndOfDay`/`istFirstOfMonth` for any "which calendar day does this
+    timestamp fall on" or day-range query, and never
+    `new Date(d.getFullYear(), d.getMonth(), d.getDate())` or
+    `date.setHours(...)`. Those depend on the **server process's own OS
+    timezone**, which is only IST by coincidence on a dev machine — a
+    fresh cloud VM defaults to UTC, silently shifting every such
+    calculation by 5.5 hours. This was a real bug that reached production
+    (tutor/staff check-in times) — see `08-KNOWN-GAPS-AND-TODOS.md` for
+    the full story. Relatedly: when a client needs to send "what time did
+    this happen," always send a full ISO instant built from *that
+    device's own* local time, never a bare `"HH:mm"` for the server to
+    reconstruct — the server has no business guessing a timezone for it.
 
 ## Frontend conventions
 

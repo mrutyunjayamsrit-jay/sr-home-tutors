@@ -1,9 +1,19 @@
 import type { Prisma } from "@prisma/client";
+import { istStartOfDay, istDayOfWeek, istNextDay, istCombineDateAndTime, istDateParts } from "@/common/utils/istDate";
 
 /**
  * Expands an Assignment's weekly recurrence (daysOfWeek + time slot) into
  * concrete ClassSession rows — the attendance atom everything else (reports,
  * payroll) rolls up from. Generates from `from` through `to` inclusive.
+ *
+ * All day/time math here is IST-explicit (see common/utils/istDate.ts) —
+ * `daysOfWeek` and `timeSlotStart`/`timeSlotEnd` are set by Indian branch
+ * offices meaning IST days/times, and this is server-side code that must
+ * not depend on the server process's own OS timezone. A prior version
+ * used `date.setHours(...)` and local `Date` getters here, which produced
+ * every generated class's scheduled time 5.5 hours wrong the moment this
+ * ran on a server not set to IST (e.g. a cloud VM, which defaults to
+ * UTC) — see context/08-KNOWN-GAPS-AND-TODOS.md.
  *
  * Rolling-horizon by design, not "forever": we generate through the end of
  * next calendar month at creation time and would need a scheduled job to
@@ -14,22 +24,15 @@ import type { Prisma } from "@prisma/client";
 export function generateSessionDates(daysOfWeek: number[], from: Date, to: Date): Date[] {
   const days = new Set(daysOfWeek);
   const dates: Date[] = [];
-  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  let cursor = istStartOfDay(from);
+  const end = istStartOfDay(to);
   while (cursor <= end) {
-    if (days.has(cursor.getDay())) {
-      dates.push(new Date(cursor));
+    if (days.has(istDayOfWeek(cursor))) {
+      dates.push(cursor);
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor = istNextDay(cursor);
   }
   return dates;
-}
-
-function combineDateAndTime(date: Date, hhmm: string): Date {
-  const [h, m] = hhmm.split(":").map(Number);
-  const combined = new Date(date);
-  combined.setHours(h ?? 0, m ?? 0, 0, 0);
-  return combined;
 }
 
 export function buildSessionRows(
@@ -47,14 +50,17 @@ export function buildSessionRows(
   return dates.map((date) => ({
     assignmentId: assignment.id,
     scheduledDate: date,
-    scheduledStart: combineDateAndTime(date, assignment.timeSlotStart),
-    scheduledEnd: combineDateAndTime(date, assignment.timeSlotEnd),
+    scheduledStart: istCombineDateAndTime(date, assignment.timeSlotStart),
+    scheduledEnd: istCombineDateAndTime(date, assignment.timeSlotEnd),
     status: "SCHEDULED" as const,
   }));
 }
 
-/** Rolling horizon used at assignment-creation time: through the end of next calendar month. */
+/** Rolling horizon used at assignment-creation time: through the end of next calendar month, in IST. */
 export function defaultHorizonEnd(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 2, 0); // day 0 of month+2 = last day of month+1
+  const { year, month } = istDateParts(new Date());
+  // Day 0 of (month+2) = last day of (month+1) — same "day 0" trick as
+  // before, just resolved against the IST year/month rather than the
+  // server's own local fields.
+  return istStartOfDay(new Date(Date.UTC(year, month + 2, 0)));
 }

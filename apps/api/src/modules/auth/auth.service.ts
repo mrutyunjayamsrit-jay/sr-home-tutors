@@ -4,6 +4,7 @@ import { REFRESH_COOKIE_NAME, signAccessToken } from "./token.service";
 import { authRepository } from "./auth.repository";
 import { generateOpaqueToken, hashPassword, verifyPassword } from "./password.util";
 import { logger } from "@/common/logger";
+import { istStartOfDay } from "@/common/utils/istDate";
 import type { User } from "@prisma/client";
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -145,12 +146,9 @@ export const authService = {
   async hasAcknowledgedRulesToday(userId: string): Promise<boolean> {
     const latest = await authRepository.latestRuleAcknowledgment(userId);
     if (!latest) return false;
-    const today = new Date();
-    return (
-      latest.acknowledgedAt.getFullYear() === today.getFullYear() &&
-      latest.acknowledgedAt.getMonth() === today.getMonth() &&
-      latest.acknowledgedAt.getDate() === today.getDate()
-    );
+    // "Today" means the IST calendar day, not the server's own — see
+    // common/utils/istDate.ts.
+    return istStartOfDay(latest.acknowledgedAt).getTime() === istStartOfDay(new Date()).getTime();
   },
 
   refreshCookieName: REFRESH_COOKIE_NAME,

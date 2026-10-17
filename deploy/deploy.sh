@@ -14,7 +14,13 @@ echo "→ Building and restarting containers..."
 docker compose -f deploy/docker-compose.prod.yml up -d --build
 
 echo "→ Applying database migrations..."
-docker compose -f deploy/docker-compose.prod.yml exec -T api npx prisma migrate deploy
+# -u root: the api container runs as an unprivileged user by design, but
+# `prisma migrate deploy` needs to fetch its migration-engine binary into
+# node_modules/@prisma/engines on first use, which that user can't write to
+# (node_modules is copied in owned by root in the Dockerfile). Only this
+# one-off migration step is elevated — the actual running server process
+# stays on the unprivileged user.
+docker compose -f deploy/docker-compose.prod.yml exec -u root -T api npx prisma migrate deploy
 
 echo "→ Done. Tailing logs (Ctrl+C to stop watching — containers keep running):"
 docker compose -f deploy/docker-compose.prod.yml logs -f --tail=50 api
