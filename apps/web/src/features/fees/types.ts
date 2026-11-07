@@ -7,8 +7,13 @@ export interface FeeRateCard {
   branchId: string;
   board: Board;
   classCategory: string;
-  ratePerClass: number;
   billingCycle: BillingCycle;
+  // MONTHLY only.
+  ratePerClass: number | null;
+  // PACKAGE only — a fixed bundle (e.g. "3 subjects, 100 classes, ₹45,000"), not a per-class rate.
+  numberOfSubjects: number | null;
+  totalClasses: number | null;
+  totalAmount: number | null;
   // Only populated when Super Admin lists across every branch (no branchId filter) — see fees.service.ts listRateCards.
   branch?: { id: string; name: string };
 }
@@ -26,6 +31,8 @@ export interface StudentFeeInvoice {
   paidAt: string | null;
   paymentMethod: string | null;
   status: InvoiceStatus;
+  /** Super Admin's own sign-off on the payment the branch recorded — independent of `status` (see fees.service.ts approveInvoice). */
+  approvedAt: string | null;
   student: {
     id: string;
     name: string;

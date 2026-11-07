@@ -49,3 +49,10 @@ branchRouter.get(
   requireBranchMatch((req) => req.params.branchId),
   branchController.stats,
 );
+branchRouter.get(
+  "/:branchId/attendance-trend",
+  validate({ params: branchIdParamSchema }),
+  authorize("SUPER_ADMIN", "BRANCH_ADMIN"),
+  requireBranchMatch((req) => req.params.branchId),
+  branchController.attendanceTrend,
+);

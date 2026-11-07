@@ -18,7 +18,7 @@ function formatDate(iso: string | null) {
  * full list with a status filter at /branch/tasks).
  */
 export function TasksTile() {
-  const pending = useTasks({ status: "PENDING", pageSize: 5 });
+  const pending = useTasks({ status: "PENDING", direction: "TO_BRANCH", pageSize: 5 });
   const completeTask = useCompleteTask();
 
   const handleComplete = async (task: Task) => {
@@ -58,12 +58,11 @@ export function TasksTile() {
         >
           <div>
             <strong style={{ fontSize: "var(--text-sm)" }}>{t.title}</strong>
-            {t.dueDate && (
-              <p style={{ margin: "2px 0 0", fontSize: "var(--text-xs)", color: isOverdue(t) ? "var(--color-danger-500)" : "var(--text-tertiary)" }}>
-                Due {formatDate(t.dueDate)}
-                {isOverdue(t) && " · overdue"}
-              </p>
-            )}
+            <p style={{ margin: "2px 0 0", fontSize: "var(--text-xs)", color: isOverdue(t) ? "var(--color-danger-500)" : "var(--text-tertiary)" }}>
+              Assigned {formatDate(t.assignedDate)}
+              {t.dueDate && ` · Due ${formatDate(t.dueDate)}`}
+              {isOverdue(t) && " · overdue"}
+            </p>
           </div>
           <Button size="sm" variant="secondary" loading={completeTask.isPending} onClick={() => handleComplete(t)}>
             Mark complete

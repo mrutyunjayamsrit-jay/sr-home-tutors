@@ -8,6 +8,24 @@ interface ListParams {
   status?: string;
   branchId?: string;
   createdById?: string;
+  gender?: string;
+  contactNumber?: string;
+  education?: string;
+  subject?: string;
+  source?: "WEBSITE" | "STAFF";
+  from?: Date;
+  to?: Date;
+}
+
+/** "Website" enquiries are created by the public form's fixed createdById sentinel — everything else was entered by staff. Same distinction EnquiriesPage.tsx's "Source" column already renders. */
+function sourceFilter(source: "WEBSITE" | "STAFF" | undefined) {
+  if (!source) return {};
+  return source === "WEBSITE" ? { createdById: "PUBLIC_WEBSITE" } : { createdById: { not: "PUBLIC_WEBSITE" } };
+}
+
+function enquiryDateFilter(from: Date | undefined, to: Date | undefined) {
+  if (!from && !to) return {};
+  return { enquiryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } };
 }
 
 export const enquiriesRepository = {
@@ -17,6 +35,12 @@ export const enquiriesRepository = {
       ...(params.branchId ? { branchId: params.branchId } : {}),
       ...(params.createdById ? { createdById: params.createdById } : {}),
       ...(params.status ? { status: params.status as Prisma.EnumEnquiryStatusFilter["equals"] } : {}),
+      ...(params.gender ? { gender: params.gender as Prisma.EnumGenderNullableFilter["equals"] } : {}),
+      ...(params.contactNumber ? { contactNumber: { contains: params.contactNumber } } : {}),
+      ...(params.education ? { education: { contains: params.education, mode: "insensitive" } } : {}),
+      ...(params.subject ? { subjectsInterested: { has: params.subject } } : {}),
+      ...sourceFilter(params.source),
+      ...enquiryDateFilter(params.from, params.to),
       ...(params.search
         ? { OR: [{ name: { contains: params.search, mode: "insensitive" } }, { contactNumber: { contains: params.search } }] }
         : {}),
@@ -24,7 +48,7 @@ export const enquiriesRepository = {
     const [items, total] = await Promise.all([
       prisma.tutorEnquiry.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: { name: "asc" },
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -51,6 +75,8 @@ export const enquiriesRepository = {
       ...(params.branchId ? { branchId: params.branchId } : {}),
       ...(params.createdById ? { createdById: params.createdById } : {}),
       ...(params.status ? { status: params.status as Prisma.EnumEnquiryStatusFilter["equals"] } : {}),
+      ...sourceFilter(params.source),
+      ...enquiryDateFilter(params.from, params.to),
       ...(params.search
         ? {
             OR: [
@@ -63,7 +89,7 @@ export const enquiriesRepository = {
     const [items, total] = await Promise.all([
       prisma.parentEnquiry.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: { studentName: "asc" },
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

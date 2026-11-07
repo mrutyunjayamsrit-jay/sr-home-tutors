@@ -1,7 +1,7 @@
 import { asyncHandler } from "@/common/utils/asyncHandler";
 import { created, noContent, ok } from "@/common/utils/apiResponse";
 import { masterDataService } from "./master-data.service";
-import { createAreaSchema, createSubjectSchema, listAreasQuerySchema } from "./master-data.types";
+import { createAreaSchema, createSubjectSchema, geocodeAreaQuerySchema, listAreasQuerySchema } from "./master-data.types";
 
 export const masterDataController = {
   listSubjects: asyncHandler(async (_req, res) => {
@@ -35,5 +35,11 @@ export const masterDataController = {
   deleteArea: asyncHandler(async (req, res) => {
     await masterDataService.deleteArea(req.params.areaId!);
     noContent(res);
+  }),
+
+  geocodeArea: asyncHandler(async (req, res) => {
+    const { q } = geocodeAreaQuerySchema.parse(req.query);
+    const result = await masterDataService.geocodeArea(q);
+    ok(res, result);
   }),
 };

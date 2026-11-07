@@ -38,6 +38,11 @@ export const branchController = {
     ok(res, stats);
   }),
 
+  attendanceTrend: asyncHandler(async (req, res) => {
+    const trend = await branchService.getAttendanceTrend(req.params.branchId!);
+    ok(res, trend);
+  }),
+
   orgSummary: asyncHandler(async (req, res) => {
     const summary = await branchService.getOrgSummary();
     ok(res, summary);

@@ -77,6 +77,10 @@ export const authService = {
     }
 
     await authRepository.resetFailedLogin(user.id);
+    if (user.status === "PENDING_ACTIVATION") {
+      await authRepository.activateIfPending(user.id);
+      user.status = "ACTIVE";
+    }
 
     const { accessToken, refreshToken } = await issueTokenPair(user, ctx);
     return { user: sanitizeUser(user), accessToken, refreshToken };
@@ -105,6 +109,10 @@ export const authService = {
     const user = (await authRepository.findUserById(userId)) as UserWithProfiles | null;
     if (!user || user.status === "DISABLED") {
       throw new AuthenticationError("Account unavailable");
+    }
+    if (user.status === "PENDING_ACTIVATION") {
+      await authRepository.activateIfPending(user.id);
+      user.status = "ACTIVE";
     }
     const { accessToken, refreshToken } = await issueTokenPair(user, ctx);
     return { user: sanitizeUser(user), accessToken, refreshToken };

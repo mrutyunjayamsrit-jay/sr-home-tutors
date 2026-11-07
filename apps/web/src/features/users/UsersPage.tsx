@@ -6,9 +6,22 @@ import type { Column } from "@/components/ui";
 import { toast } from "@/components/ui";
 import { useUsers, useDeleteUser, useEnableUser, usePermanentlyDeleteUser } from "./api";
 import { CreateUserDialog } from "./CreateUserDialog";
+import { StaffAttendanceSummaryDialog } from "./StaffAttendanceSummaryDialog";
+import { TutorDetailDialog } from "@/features/reports/TutorDetailDialog";
+import { StudentDetailDialog } from "@/features/reports/StudentDetailDialog";
 import type { UserListItem } from "./types";
 import type { Role } from "@/features/auth/types";
 import { ROLE_LABEL } from "@/features/auth/types";
+
+const CLICKABLE_ROLES: Role[] = ["BRANCH_ADMIN", "TUTOR", "STUDENT"];
+
+function firstOfMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const ROLE_FILTER_OPTIONS = [
   { value: "SUPER_ADMIN", label: "Super Admin" },
@@ -16,6 +29,12 @@ const ROLE_FILTER_OPTIONS = [
   { value: "TUTOR", label: "Tutor" },
   { value: "PARENT", label: "Parent" },
   { value: "STUDENT", label: "Student" },
+];
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "ACTIVE", label: "Active" },
+  { value: "PENDING_ACTIVATION", label: "Pending Activation" },
+  { value: "DISABLED", label: "Disabled" },
 ];
 
 const STATUS_TONE: Record<UserListItem["status"], "success" | "warning" | "neutral"> = {
@@ -28,18 +47,39 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<Role | "">("");
+  const [status, setStatus] = useState<UserListItem["status"] | "">("");
   const [createOpen, setCreateOpen] = useState(false);
   const [pendingDisable, setPendingDisable] = useState<UserListItem | null>(null);
   const [pendingHardDelete, setPendingHardDelete] = useState<UserListItem | null>(null);
   const [hardDeleteConfirmText, setHardDeleteConfirmText] = useState("");
+  const [attendanceStaffUserId, setAttendanceStaffUserId] = useState<string | null>(null);
+  const [tutorDetailId, setTutorDetailId] = useState<string | null>(null);
+  const [studentDetailId, setStudentDetailId] = useState<string | null>(null);
+  // Shared "this month" window for the Tutor/Student attendance dialogs —
+  // same default the Reports page itself uses (see ReportsPage.tsx).
+  const detailFilters = { from: firstOfMonth(), to: today() };
 
-  const { data, isLoading } = useUsers({ page, pageSize: 20, search: search || undefined, role: role || undefined });
+  const { data, isLoading } = useUsers({
+    page,
+    pageSize: 20,
+    search: search || undefined,
+    role: role || undefined,
+    status: status || undefined,
+  });
   const deleteUser = useDeleteUser();
   const enableUser = useEnableUser();
   const hardDeleteUser = usePermanentlyDeleteUser();
 
   const columns: Column<UserListItem>[] = [
-    { key: "name", header: "Name", render: (u) => <strong>{u.name}</strong> },
+    {
+      key: "name",
+      header: "Name",
+      render: (u) => (
+        <strong style={CLICKABLE_ROLES.includes(u.role) ? { color: "var(--color-primary-600)", cursor: "pointer" } : undefined}>
+          {u.name}
+        </strong>
+      ),
+    },
     { key: "role", header: "Role", render: (u) => <Badge tone="info">{ROLE_LABEL[u.role]}</Badge> },
     { key: "contact", header: "Email / Username", render: (u) => u.email ?? u.username ?? "—" },
     { key: "branch", header: "Branch", render: (u) => u.branch?.name ?? "—" },
@@ -139,7 +179,7 @@ export function UsersPage() {
           <Button onClick={() => setCreateOpen(true)}>+ Add user</Button>
         </div>
 
-        <div style={{ display: "flex", gap: "var(--space-4)", marginBottom: "var(--space-4)", maxWidth: 520 }}>
+        <div style={{ display: "flex", gap: "var(--space-4)", marginBottom: "var(--space-4)", maxWidth: 740 }}>
           <div style={{ flex: 1 }}>
             <TextField
               label="Search"
@@ -163,6 +203,18 @@ export function UsersPage() {
               }}
             />
           </div>
+          <div style={{ width: 200 }}>
+            <Select
+              label="Status"
+              placeholder="All statuses"
+              options={STATUS_FILTER_OPTIONS}
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value as UserListItem["status"] | "");
+                setPage(1);
+              }}
+            />
+          </div>
         </div>
 
         <DataTable
@@ -170,8 +222,13 @@ export function UsersPage() {
           rows={data?.data ?? []}
           rowKey={(u) => u.id}
           isLoading={isLoading}
-          emptyTitle={search || role ? "No users match your filters" : "No users yet"}
-          emptyDescription={search || role ? undefined : "Add a branch office, tutor, parent, or student login to get started."}
+          emptyTitle={search || role || status ? "No users match your filters" : "No users yet"}
+          emptyDescription={search || role || status ? undefined : "Add a branch office, tutor, parent, or student login to get started."}
+          onRowClick={(u) => {
+            if (u.role === "BRANCH_ADMIN") setAttendanceStaffUserId(u.id);
+            else if (u.role === "TUTOR" && u.profileId) setTutorDetailId(u.profileId);
+            else if (u.role === "STUDENT" && u.profileId) setStudentDetailId(u.profileId);
+          }}
         />
 
         {data?.meta && data.meta.totalPages && data.meta.totalPages > 1 && (
@@ -195,6 +252,12 @@ export function UsersPage() {
       </div>
 
       <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+
+      <StaffAttendanceSummaryDialog staffUserId={attendanceStaffUserId} onClose={() => setAttendanceStaffUserId(null)} />
+
+      <TutorDetailDialog tutorId={tutorDetailId} filters={detailFilters} onClose={() => setTutorDetailId(null)} />
+
+      <StudentDetailDialog studentId={studentDetailId} filters={detailFilters} onClose={() => setStudentDetailId(null)} />
 
       <Modal open={Boolean(pendingDisable)} onClose={() => setPendingDisable(null)} title="Disable user">
         <p style={{ margin: 0, color: "var(--text-secondary)" }}>

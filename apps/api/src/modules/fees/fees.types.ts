@@ -3,13 +3,31 @@ import { z } from "zod";
 const BOARDS = ["STATE", "CBSE", "ICSE", "OTHER"] as const;
 
 // ── Fee rate cards ──────────────────────────────────────────────────────
-export const createRateCardSchema = z.object({
-  branchId: z.string().cuid().optional(),
-  board: z.enum(BOARDS),
-  classCategory: z.string().min(1).max(40),
-  ratePerClass: z.coerce.number().positive(),
-  billingCycle: z.enum(["MONTHLY", "PACKAGE"]).default("MONTHLY"),
-});
+// MONTHLY needs a per-class rate plus how many subjects that rate covers.
+// PACKAGE needs a fixed bundle instead — some number of subjects for a
+// fixed total number of classes at a fixed total price (e.g. "3 subjects,
+// 100 classes, ₹45,000") — never both shapes on the same row, so this is a
+// discriminated union rather than a pile of optional fields with ad-hoc
+// validation.
+export const createRateCardSchema = z.discriminatedUnion("billingCycle", [
+  z.object({
+    branchId: z.string().cuid().optional(),
+    board: z.enum(BOARDS),
+    classCategory: z.string().min(1).max(40),
+    billingCycle: z.literal("MONTHLY"),
+    numberOfSubjects: z.coerce.number().int().positive(),
+    ratePerClass: z.coerce.number().positive(),
+  }),
+  z.object({
+    branchId: z.string().cuid().optional(),
+    board: z.enum(BOARDS),
+    classCategory: z.string().min(1).max(40),
+    billingCycle: z.literal("PACKAGE"),
+    numberOfSubjects: z.coerce.number().int().positive(),
+    totalClasses: z.coerce.number().int().positive(),
+    totalAmount: z.coerce.number().positive(),
+  }),
+]);
 export type CreateRateCardInput = z.infer<typeof createRateCardSchema>;
 
 export const rateCardIdParamSchema = z.object({ rateCardId: z.string().cuid() });
@@ -17,6 +35,8 @@ export const rateCardIdParamSchema = z.object({ rateCardId: z.string().cuid() })
 export const listRateCardsQuerySchema = z.object({
   branchId: z.string().cuid().optional(),
   board: z.enum(BOARDS).optional(),
+  classCategory: z.string().optional(),
+  billingCycle: z.enum(["MONTHLY", "PACKAGE"]).optional(),
 });
 
 // ── Student fee invoices ─────────────────────────────────────────────────
@@ -48,4 +68,9 @@ export const listInvoicesQuerySchema = z.object({
   studentId: z.string().cuid().optional(),
   status: z.enum(["PENDING", "PARTIAL", "PAID", "OVERDUE"]).optional(),
   search: z.string().optional(),
+  period: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  // Range filter on paidAt ("date of payment"), not createdAt/dueDate.
+  paidFrom: z.coerce.date().optional(),
+  paidTo: z.coerce.date().optional(),
 });

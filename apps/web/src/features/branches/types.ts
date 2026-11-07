@@ -3,6 +3,8 @@ export interface Branch {
   name: string;
   code: string;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   contactEmail: string | null;
   contactPhone: string | null;
   isActive: boolean;
@@ -14,6 +16,8 @@ export interface CreateBranchInput {
   name: string;
   code: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   contactEmail: string;
   contactPhone?: string;
   adminName: string;
@@ -23,6 +27,8 @@ export interface CreateBranchInput {
 export interface UpdateBranchInput {
   name?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   contactEmail?: string;
   contactPhone?: string;
   isActive?: boolean;
@@ -49,6 +55,16 @@ export interface BranchStats {
   registeredTutors: number;
   registeredStudents: number;
   runningClasses: number;
+  /** Currently outstanding (not a date-range window) — see branch.service.ts getStats. */
+  outstandingFeesAmount: number;
+  outstandingInvoiceCount: number;
+}
+
+/** One IST calendar day's distinct present counts — see branch.service.ts getAttendanceTrend. */
+export interface AttendanceTrendPoint {
+  date: string;
+  tutorsPresent: number;
+  studentsPresent: number;
 }
 
 /** Org-wide Super Admin dashboard numbers — see branch.service.ts getOrgSummary. */

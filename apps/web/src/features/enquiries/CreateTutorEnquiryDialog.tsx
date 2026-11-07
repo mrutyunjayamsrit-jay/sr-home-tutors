@@ -26,6 +26,10 @@ const ADDRESS_PROOF_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const schema = z.object({
   name: z.string().min(2, "Required"),
   gender: z.string().min(1, "Choose a gender"),
@@ -39,6 +43,7 @@ const schema = z.object({
   subjectsInterested: z.array(z.string()).default([]),
   areasInterested: z.array(z.string()).default([]),
   notes: z.string().optional(),
+  enquiryDate: z.string().min(1, "Required"),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -59,7 +64,7 @@ export function CreateTutorEnquiryDialog({ open, onClose }: { open: boolean; onC
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { ownsVehicle: false, categories: [], subjectsInterested: [], areasInterested: [] },
+    defaultValues: { ownsVehicle: false, categories: [], subjectsInterested: [], areasInterested: [], enquiryDate: today() },
   });
 
   const selectedCategories = watch("categories") ?? [];
@@ -86,6 +91,7 @@ export function CreateTutorEnquiryDialog({ open, onClose }: { open: boolean; onC
         subjectsInterested: values.subjectsInterested,
         areasInterested: values.areasInterested,
         notes: values.notes || undefined,
+        enquiryDate: values.enquiryDate,
       });
       toast.success(`Tutor enquiry for ${values.name} added`);
       handleClose();
@@ -98,6 +104,13 @@ export function CreateTutorEnquiryDialog({ open, onClose }: { open: boolean; onC
     <Modal open={open} onClose={handleClose} title="New tutor enquiry">
       <form onSubmit={handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: "16px" }} noValidate>
         <TextField label="Name of the tutor" error={errors.name?.message} {...register("name")} />
+        <TextField
+          label="Enquiry date"
+          type="date"
+          hint="Defaults to today — change it to back-enter an earlier enquiry"
+          error={errors.enquiryDate?.message}
+          {...register("enquiryDate")}
+        />
         <Select label="Gender" placeholder="Choose gender" options={GENDER_OPTIONS} error={errors.gender?.message} {...register("gender")} />
         <TextField label="Education" hint="e.g. B.Ed, M.Sc. Physics" error={errors.education?.message} {...register("education")} />
         <TextField label="Contact number" error={errors.contactNumber?.message} {...register("contactNumber")} />

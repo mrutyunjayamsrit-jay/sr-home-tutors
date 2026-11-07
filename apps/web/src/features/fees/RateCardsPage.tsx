@@ -1,12 +1,23 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { ADMIN_NAV } from "@/app/navConfig";
-import { Button, DataTable, Select, toast } from "@/components/ui";
+import { Button, DataTable, Select, TextField, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useRateCards, useDeleteRateCard } from "./api";
 import { useBranches } from "@/features/branches/api";
 import { CreateRateCardDialog } from "./CreateRateCardDialog";
-import type { FeeRateCard } from "./types";
+import type { Board, BillingCycle, FeeRateCard } from "./types";
+
+const BOARD_OPTIONS = [
+  { value: "STATE", label: "State Board" },
+  { value: "CBSE", label: "CBSE" },
+  { value: "ICSE", label: "ICSE" },
+  { value: "OTHER", label: "Other" },
+];
+const CYCLE_OPTIONS = [
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "PACKAGE", label: "Package" },
+];
 
 /**
  * Fee pricing is a Super Admin-only decision (see fees.routes.ts) — a
@@ -16,13 +27,29 @@ import type { FeeRateCard } from "./types";
  */
 export function RateCardsPage() {
   const [branchId, setBranchId] = useState("");
+  const [board, setBoard] = useState<"" | Board>("");
+  const [classCategory, setClassCategory] = useState("");
+  const [billingCycle, setBillingCycle] = useState<"" | BillingCycle>("");
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data: branches } = useBranches({ page: 1, pageSize: 100 });
   const branchOptions = (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name }));
 
-  const rateCards = useRateCards({ branchId: branchId || undefined });
+  const rateCards = useRateCards({
+    branchId: branchId || undefined,
+    board: board || undefined,
+    classCategory: classCategory || undefined,
+    billingCycle: billingCycle || undefined,
+  });
   const deleteRateCard = useDeleteRateCard();
+
+  const hasActiveFilters = Boolean(branchId || board || classCategory || billingCycle);
+  const handleClearFilters = () => {
+    setBranchId("");
+    setBoard("");
+    setClassCategory("");
+    setBillingCycle("");
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -37,8 +64,14 @@ export function RateCardsPage() {
     { key: "branch", header: "Branch", render: (r) => r.branch?.name ?? "—" },
     { key: "board", header: "Board", render: (r) => r.board },
     { key: "category", header: "Class category", render: (r) => r.classCategory },
-    { key: "rate", header: "Rate/class", render: (r) => `₹${r.ratePerClass}` },
-    { key: "cycle", header: "Billing cycle", render: (r) => r.billingCycle },
+    { key: "subjects", header: "Subjects", render: (r) => r.numberOfSubjects ?? "—" },
+    { key: "cycle", header: "Billing cycle", render: (r) => (r.billingCycle === "PACKAGE" ? "Package" : "Monthly") },
+    {
+      key: "details",
+      header: "Rate / Package",
+      render: (r) =>
+        r.billingCycle === "PACKAGE" ? `${r.totalClasses} classes · ₹${r.totalAmount}` : `₹${r.ratePerClass}/class`,
+    },
     {
       key: "actions",
       header: "",
@@ -70,14 +103,30 @@ export function RateCardsPage() {
           <Button onClick={() => setCreateOpen(true)}>+ New rate card</Button>
         </div>
 
-        <div style={{ maxWidth: 280, margin: "0 0 var(--space-4)" }}>
-          <Select
-            label="Branch"
-            placeholder="All branches"
-            options={branchOptions}
-            value={branchId}
-            onChange={(e) => setBranchId(e.target.value)}
-          />
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", margin: "0 0 var(--space-4)" }}>
+          <div style={{ width: 220 }}>
+            <Select label="Branch" placeholder="All branches" options={branchOptions} value={branchId} onChange={(e) => setBranchId(e.target.value)} />
+          </div>
+          <div style={{ width: 180 }}>
+            <Select label="Board" placeholder="All" options={BOARD_OPTIONS} value={board} onChange={(e) => setBoard(e.target.value as "" | Board)} />
+          </div>
+          <div style={{ width: 200 }}>
+            <TextField label="Class category" placeholder="Search class category" value={classCategory} onChange={(e) => setClassCategory(e.target.value)} />
+          </div>
+          <div style={{ width: 180 }}>
+            <Select
+              label="Billing cycle"
+              placeholder="All"
+              options={CYCLE_OPTIONS}
+              value={billingCycle}
+              onChange={(e) => setBillingCycle(e.target.value as "" | BillingCycle)}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <Button variant="ghost" onClick={handleClearFilters} disabled={!hasActiveFilters}>
+              Clear all filters
+            </Button>
+          </div>
         </div>
 
         <DataTable

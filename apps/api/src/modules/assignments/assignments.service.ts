@@ -110,13 +110,34 @@ export const assignmentsService = {
     return assignment;
   },
 
-  async list(params: { page: number; pageSize: number; branchId?: string; status?: string; search?: string; studentId?: string }, actor: Actor) {
+  async list(
+    params: {
+      page: number;
+      pageSize: number;
+      branchId?: string;
+      status?: string;
+      search?: string;
+      studentId?: string;
+      studentName?: string;
+      tutorName?: string;
+      subject?: string;
+      from?: Date;
+      to?: Date;
+    },
+    actor: Actor,
+  ) {
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
     const studentScope = await resolveStudentScope(actor, params.studentId);
     const where: Prisma.AssignmentWhereInput = {
       ...studentScope,
       ...(actor.role === "TUTOR" ? { tutorId: actor.profileId } : actor.role !== "PARENT" && branchId ? { branchId } : {}),
       ...(params.status ? { status: params.status as Prisma.EnumAssignmentStatusFilter["equals"] } : {}),
+      ...(params.studentName ? { student: { name: { contains: params.studentName, mode: "insensitive" } } } : {}),
+      ...(params.tutorName ? { tutor: { name: { contains: params.tutorName, mode: "insensitive" } } } : {}),
+      ...(params.subject ? { subjects: { has: params.subject } } : {}),
+      ...(params.from || params.to
+        ? { startDate: { ...(params.from ? { gte: params.from } : {}), ...(params.to ? { lte: params.to } : {}) } }
+        : {}),
       ...(params.search
         ? {
             OR: [
@@ -170,13 +191,18 @@ export const assignmentsService = {
    * and the attendance percentage, computed live from ClassSession so it
    * can never drift from what was actually marked.
    */
-  async runningClasses(params: { branchId?: string; search?: string; studentId?: string }, actor: Actor) {
+  async runningClasses(
+    params: { branchId?: string; search?: string; studentId?: string; studentName?: string; tutorName?: string },
+    actor: Actor,
+  ) {
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
     const studentScope = await resolveStudentScope(actor, params.studentId);
     const where: Prisma.AssignmentWhereInput = {
       status: "ACTIVE",
       ...studentScope,
       ...(actor.role === "TUTOR" ? { tutorId: actor.profileId } : actor.role !== "PARENT" && branchId ? { branchId } : {}),
+      ...(params.studentName ? { student: { name: { contains: params.studentName, mode: "insensitive" } } } : {}),
+      ...(params.tutorName ? { tutor: { name: { contains: params.tutorName, mode: "insensitive" } } } : {}),
       ...(params.search
         ? {
             OR: [
@@ -197,7 +223,7 @@ export const assignmentsService = {
     });
 
     const today = new Date();
-    return assignments.map((a) => {
+    const rows = assignments.map((a) => {
       const pastOrTodaySessions = a.sessions.filter((s) => s.scheduledDate <= today);
       const attended = pastOrTodaySessions.filter((s) => s.status === "COMPLETED").length;
       const absent = pastOrTodaySessions.filter((s) => s.status === "ABSENT_STUDENT" || s.status === "ABSENT_TUTOR").length;
@@ -219,5 +245,10 @@ export const assignmentsService = {
         absentPercent: Math.min(100, Math.round((absent / denominator) * 100)),
       };
     });
+
+    // Highest attendance first, so a branch admin scanning the list sees
+    // their best-attended classes up top (and, scrolling to the bottom,
+    // the ones that most need following up on).
+    return rows.sort((a, b) => b.attendancePercent - a.attendancePercent);
   },
 };

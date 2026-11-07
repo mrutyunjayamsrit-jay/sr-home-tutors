@@ -28,3 +28,12 @@ export interface BranchOverviewRow {
   admins: BranchOverviewAdmin[];
   marked: boolean;
 }
+
+export interface StaffAttendanceSummary {
+  staff: { id: string; name: string | null; email: string | null; username: string | null; branch: { id: string; name: string } | null };
+  period: { from: string; to: string };
+  daysPresent: number;
+  daysAbsent: number;
+  totalDays: number;
+  records: { date: string; loginAt: string | null; logoutAt: string | null; status: StaffAttendanceStatus }[];
+}

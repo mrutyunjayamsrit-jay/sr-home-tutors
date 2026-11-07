@@ -7,7 +7,7 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import type { ApiError } from "@/lib/apiClient";
 import { useRateCards } from "@/features/fees/api";
 import { useAuthStore } from "@/features/auth/authStore";
-import { matchRateCard } from "@/lib/rateCardMatch";
+import { matchRateCard, rateCardPrice } from "@/lib/rateCardMatch";
 import type { ConvertCredentials } from "./types";
 import type { ConvertEnquiryMutationInput } from "./api";
 
@@ -86,7 +86,8 @@ export function ConvertEnquiryDialog({
     if (!open || !isParent || !board || !studentClass || initialFeesPrescribed != null) return;
     if (dirtyFields.feesPrescribed) return;
     const match = matchRateCard(rateCards.data ?? [], board, studentClass);
-    if (match) setValue("feesPrescribed", String(match.ratePerClass));
+    const price = match ? rateCardPrice(match) : null;
+    if (price != null) setValue("feesPrescribed", String(price));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isParent, board, studentClass, rateCards.data, initialFeesPrescribed]);
 

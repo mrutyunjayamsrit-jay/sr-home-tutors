@@ -9,6 +9,7 @@ interface ListParams {
   search?: string;
   role?: Role;
   branchId?: string;
+  status?: "PENDING_ACTIVATION" | "ACTIVE" | "DISABLED";
 }
 
 function toQueryString(params: ListParams | { branchId?: string }) {

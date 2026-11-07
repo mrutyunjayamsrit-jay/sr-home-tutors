@@ -28,6 +28,22 @@ export const listAssignmentsQuerySchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   search: z.string().optional(),
   studentId: z.string().cuid().optional(),
+  // Per-column filters for AssignTutorPage.tsx's Assignments table.
+  studentName: z.string().optional(),
+  tutorName: z.string().optional(),
+  subject: z.string().optional(),
+  // Range filter on the assignment's own startDate ("class start date"), not createdAt.
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
+export const listRunningClassesQuerySchema = z.object({
+  branchId: z.string().cuid().optional(),
+  search: z.string().optional(),
+  studentId: z.string().cuid().optional(),
+  // Per-column filters for AssignTutorPage.tsx's Running Classes table.
+  studentName: z.string().optional(),
+  tutorName: z.string().optional(),
 });
 
 export const assignmentIdParamSchema = z.object({ assignmentId: z.string().cuid() });

@@ -18,4 +18,8 @@ export const expensesController = {
     await expensesService.remove(req.params.expenseId!, req.user!);
     noContent(res);
   }),
+  approve: asyncHandler(async (req, res) => {
+    const expense = await expensesService.approve(req.params.expenseId!, req.user!);
+    ok(res, expense);
+  }),
 };

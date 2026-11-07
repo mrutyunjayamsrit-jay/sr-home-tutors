@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { Button, Card, DataTable, TextField, Badge } from "@/components/ui";
+import { Button, Card, DataTable, TextField, Select, Badge } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { toast } from "@/components/ui";
 import {
@@ -35,6 +35,23 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const ATTENDANCE_FILTER_OPTIONS = [
+  { value: "PRESENT", label: "Present" },
+  { value: "ABSENT", label: "Absent" },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { value: "OUTSTANDING", label: "Outstanding" },
+  { value: "SETTLED", label: "Settled" },
+];
+
+const INVOICE_STATUS_OPTIONS = [
+  { value: "PENDING", label: "Pending" },
+  { value: "PARTIAL", label: "Partial" },
+  { value: "PAID", label: "Paid" },
+  { value: "OVERDUE", label: "Overdue" },
+];
+
 /**
  * Same report engine as the Super Admin's ReportsPage, minus the branch
  * selector — a Branch Admin can't call GET /branches (Super Admin only),
@@ -47,6 +64,10 @@ export function BranchReportsPage() {
   const [to, setTo] = useState(today());
   const [tutorName, setTutorName] = useState("");
   const [studentName, setStudentName] = useState("");
+  const [attendanceFilter, setAttendanceFilter] = useState<"" | "PRESENT" | "ABSENT">("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<"" | "OUTSTANDING" | "SETTLED">("");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [payTutor, setPayTutor] = useState<TutorPaymentSummaryRow | null>(null);
 
@@ -57,6 +78,19 @@ export function BranchReportsPage() {
   const studentAttendance = useStudentAttendanceReport(filters, rangeValid && tab === "studentAttendance");
   const tutorPayments = useTutorPaymentsSummary(filters, rangeValid && tab === "tutorPayments");
   const studentFees = useStudentFeesReport(filters, rangeValid && tab === "studentFees");
+
+  const tutorAttendanceRows = (tutorAttendance.data?.rows ?? []).filter((r) =>
+    attendanceFilter === "PRESENT" ? r.present > 0 : attendanceFilter === "ABSENT" ? r.absent > 0 : true,
+  );
+  const studentAttendanceRows = (studentAttendance.data?.rows ?? []).filter((r) =>
+    attendanceFilter === "PRESENT" ? r.classesAttended > 0 : attendanceFilter === "ABSENT" ? r.classesAbsent > 0 : true,
+  );
+  const tutorPaymentsRows = (tutorPayments.data?.rows ?? [])
+    .filter((r) => (paymentStatusFilter === "OUTSTANDING" ? r.outstandingAmount > 0 : paymentStatusFilter === "SETTLED" ? r.outstandingAmount <= 0 : true))
+    .filter((r) => (attendanceFilter === "PRESENT" ? r.classesTaken > 0 : attendanceFilter === "ABSENT" ? r.classesAbsent > 0 : true));
+  const studentFeesRows = (studentFees.data?.rows ?? [])
+    .filter((r) => (invoiceStatusFilter ? r.status === invoiceStatusFilter : true))
+    .filter((r) => (periodFilter ? r.period.toLowerCase().includes(periodFilter.toLowerCase()) : true));
 
   const handleExport = async () => {
     const kindMap: Record<ReportKind, Parameters<typeof downloadReportCsv>[0]> = {
@@ -101,15 +135,70 @@ export function BranchReportsPage() {
               <span>To</span>
               <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className={styles.dateInput} />
             </label>
-            {tab === "tutorPayments" && (
-              <div style={{ minWidth: 200 }}>
-                <TextField label="Tutor name" placeholder="Search by tutor" value={tutorName} onChange={(e) => setTutorName(e.target.value)} />
+            {tab === "tutorAttendance" && (
+              <>
+                <div style={{ minWidth: 200 }}>
+                  <TextField label="Tutor name" placeholder="Search by tutor" value={tutorName} onChange={(e) => setTutorName(e.target.value)} />
+                </div>
+                <div style={{ minWidth: 200 }}>
+                  <TextField label="Student name" placeholder="Search by student" value={studentName} onChange={(e) => setStudentName(e.target.value)} />
+                </div>
+              </>
+            )}
+            {(tab === "tutorAttendance" || tab === "studentAttendance") && (
+              <div style={{ minWidth: 180 }}>
+                <Select
+                  label="Attendance"
+                  placeholder="Present & Absent"
+                  options={ATTENDANCE_FILTER_OPTIONS}
+                  value={attendanceFilter}
+                  onChange={(e) => setAttendanceFilter(e.target.value as "" | "PRESENT" | "ABSENT")}
+                />
               </div>
             )}
+            {tab === "tutorPayments" && (
+              <>
+                <div style={{ minWidth: 200 }}>
+                  <TextField label="Tutor name" placeholder="Search by tutor" value={tutorName} onChange={(e) => setTutorName(e.target.value)} />
+                </div>
+                <div style={{ minWidth: 180 }}>
+                  <Select
+                    label="Attendance"
+                    placeholder="Present & Absent"
+                    options={ATTENDANCE_FILTER_OPTIONS}
+                    value={attendanceFilter}
+                    onChange={(e) => setAttendanceFilter(e.target.value as "" | "PRESENT" | "ABSENT")}
+                  />
+                </div>
+                <div style={{ minWidth: 180 }}>
+                  <Select
+                    label="Status"
+                    placeholder="All"
+                    options={PAYMENT_STATUS_OPTIONS}
+                    value={paymentStatusFilter}
+                    onChange={(e) => setPaymentStatusFilter(e.target.value as "" | "OUTSTANDING" | "SETTLED")}
+                  />
+                </div>
+              </>
+            )}
             {tab === "studentFees" && (
-              <div style={{ minWidth: 200 }}>
-                <TextField label="Student name" placeholder="Search by student" value={studentName} onChange={(e) => setStudentName(e.target.value)} />
-              </div>
+              <>
+                <div style={{ minWidth: 200 }}>
+                  <TextField label="Student name" placeholder="Search by student" value={studentName} onChange={(e) => setStudentName(e.target.value)} />
+                </div>
+                <div style={{ minWidth: 160 }}>
+                  <TextField label="Period" placeholder="e.g. 2026-08" value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)} />
+                </div>
+                <div style={{ minWidth: 180 }}>
+                  <Select
+                    label="Status"
+                    placeholder="All"
+                    options={INVOICE_STATUS_OPTIONS}
+                    value={invoiceStatusFilter}
+                    onChange={(e) => setInvoiceStatusFilter(e.target.value)}
+                  />
+                </div>
+              </>
             )}
             <Button variant="secondary" onClick={handleExport} loading={downloading} style={{ marginLeft: "auto" }}>
               Export CSV
@@ -119,18 +208,18 @@ export function BranchReportsPage() {
 
         {!rangeValid && <p style={{ color: "var(--color-danger-500)" }}>"From" date must be on or before "To" date.</p>}
 
-        {tab === "tutorAttendance" && <TutorAttendanceTable data={tutorAttendance.data?.rows} isLoading={tutorAttendance.isLoading} />}
-        {tab === "studentAttendance" && <StudentAttendanceTable data={studentAttendance.data?.rows} isLoading={studentAttendance.isLoading} />}
+        {tab === "tutorAttendance" && <TutorAttendanceTable data={tutorAttendanceRows} isLoading={tutorAttendance.isLoading} />}
+        {tab === "studentAttendance" && <StudentAttendanceTable data={studentAttendanceRows} isLoading={studentAttendance.isLoading} />}
         {tab === "tutorPayments" && (
           <TutorPaymentsTable
-            data={tutorPayments.data?.rows}
+            data={tutorPaymentsRows}
             summary={tutorPayments.data?.summary}
             isLoading={tutorPayments.isLoading}
             onMarkPaid={setPayTutor}
           />
         )}
         {tab === "studentFees" && (
-          <StudentFeesTable data={studentFees.data?.rows} summary={studentFees.data?.summary} isLoading={studentFees.isLoading} />
+          <StudentFeesTable data={studentFeesRows} summary={studentFees.data?.summary} isLoading={studentFees.isLoading} />
         )}
       </div>
 
@@ -173,6 +262,7 @@ function StudentAttendanceTable({ data, isLoading }: { data?: StudentAttendanceR
     { key: "tutorName", header: "Tutor", render: (r) => r.tutorName },
     { key: "subjects", header: "Subjects", render: (r) => r.subjects || "—" },
     { key: "classesAttended", header: "Classes Attended", render: (r) => r.classesAttended },
+    { key: "classesAbsent", header: "Classes Absent", render: (r) => r.classesAbsent },
     { key: "chaptersCompleted", header: "Chapters Completed", render: (r) => r.chaptersCompleted || "—" },
     { key: "hours", header: "Time Spent (hrs)", render: (r) => r.totalTimeSpentHours },
   ];
@@ -203,6 +293,7 @@ function TutorPaymentsTable({
     { key: "classesTaken", header: "Classes Taken", render: (r) => r.classesTaken },
     { key: "classesAbsent", header: "Classes Absent", render: (r) => r.classesAbsent },
     { key: "hours", header: "Hours Taught", render: (r) => r.totalHoursTaught },
+    { key: "fixedPay", header: "Fixed Pay", render: (r) => `₹${r.fixedPay}` },
     { key: "payable", header: "Payable", render: (r) => `₹${r.payableAmount}` },
     { key: "paid", header: "Paid", render: (r) => <span style={{ color: "var(--color-success-500)" }}>₹{r.paidAmount}</span> },
     {

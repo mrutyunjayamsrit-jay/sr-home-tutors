@@ -16,6 +16,15 @@ interface ListParams {
   status?: EnquiryStatus;
   /** Super Admin only — a Branch Admin is always scoped server-side to their own branch regardless of this. */
   branchId?: string;
+  /** Tutor-enquiry filters only — ignored server-side by the parent-enquiry listing. */
+  gender?: string;
+  contactNumber?: string;
+  education?: string;
+  subject?: string;
+  source?: "WEBSITE" | "STAFF";
+  /** Range filter on enquiryDate, not createdAt. */
+  from?: string;
+  to?: string;
 }
 
 function qs(params: ListParams) {

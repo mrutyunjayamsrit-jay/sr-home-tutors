@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/apiClient";
-import type { CreateTaskInput, Task, TaskStatus } from "./types";
+import type { CreateTaskInput, Task, TaskDirection, TaskStatus } from "./types";
 
 interface ListParams {
   page?: number;
   pageSize?: number;
   branchId?: string;
   status?: TaskStatus;
+  direction?: TaskDirection;
 }
 
 function qs(params: ListParams) {

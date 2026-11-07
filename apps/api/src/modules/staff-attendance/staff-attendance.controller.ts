@@ -1,7 +1,13 @@
 import { asyncHandler } from "@/common/utils/asyncHandler";
 import { ok } from "@/common/utils/apiResponse";
 import { staffAttendanceService } from "./staff-attendance.service";
-import { checkTimeSchema, listMineQuerySchema, overviewQuerySchema } from "./staff-attendance.types";
+import {
+  checkTimeSchema,
+  listMineQuerySchema,
+  overviewQuerySchema,
+  staffSummaryParamsSchema,
+  staffSummaryQuerySchema,
+} from "./staff-attendance.types";
 
 export const staffAttendanceController = {
   checkIn: asyncHandler(async (req, res) => {
@@ -27,5 +33,11 @@ export const staffAttendanceController = {
     const query = overviewQuerySchema.parse(req.query);
     const rows = await staffAttendanceService.overview(query, req.user!);
     ok(res, rows);
+  }),
+  summaryForUser: asyncHandler(async (req, res) => {
+    const { staffUserId } = staffSummaryParamsSchema.parse(req.params);
+    const query = staffSummaryQuerySchema.parse(req.query);
+    const result = await staffAttendanceService.summaryForUser(staffUserId, query, req.user!);
+    ok(res, result);
   }),
 };

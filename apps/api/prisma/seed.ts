@@ -291,6 +291,7 @@ async function seedDemoStory() {
       branchId: tutor.branchId,
       board: "CBSE",
       classCategory: "6-10",
+      numberOfSubjects: 1,
       ratePerClass: 500,
       billingCycle: "MONTHLY",
       createdById: tutorUser.id,

@@ -3,7 +3,7 @@ import { AppShell } from "@/app/AppShell";
 import { ADMIN_NAV } from "@/app/navConfig";
 import { Button, DataTable, Select, TextField, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
-import { useAreas, useCreateArea, useCreateSubject, useDeleteArea, useDeleteSubject, useSubjects } from "./api";
+import { useAreas, useCreateArea, useCreateSubject, useDeleteArea, useDeleteSubject, useGeocodeArea, useSubjects } from "./api";
 import { useBranches } from "@/features/branches/api";
 import type { Area, Subject } from "./types";
 import styles from "@/features/reports/ReportsPage.module.css";
@@ -21,8 +21,11 @@ export function MasterDataPage() {
   const [tab, setTab] = useState<Tab>("subjects");
   const [newSubject, setNewSubject] = useState("");
   const [areaBranchId, setAreaBranchId] = useState("");
+  const [areaSearch, setAreaSearch] = useState("");
   const [newAreaBranchId, setNewAreaBranchId] = useState("");
   const [newArea, setNewArea] = useState("");
+  const [newAreaLat, setNewAreaLat] = useState("");
+  const [newAreaLng, setNewAreaLng] = useState("");
 
   const { data: branches } = useBranches({ page: 1, pageSize: 100 });
   const branchOptions = (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name }));
@@ -31,9 +34,10 @@ export function MasterDataPage() {
   const createSubject = useCreateSubject();
   const deleteSubject = useDeleteSubject();
 
-  const areas = useAreas({ branchId: areaBranchId || undefined });
+  const areas = useAreas({ branchId: areaBranchId || undefined, search: areaSearch || undefined });
   const createArea = useCreateArea();
   const deleteArea = useDeleteArea();
+  const geocodeArea = useGeocodeArea();
 
   const handleAddSubject = async () => {
     const name = newSubject.trim();
@@ -60,11 +64,35 @@ export function MasterDataPage() {
     const name = newArea.trim();
     if (!name || !newAreaBranchId) return;
     try {
-      await createArea.mutateAsync({ branchId: newAreaBranchId, name });
+      await createArea.mutateAsync({
+        branchId: newAreaBranchId,
+        name,
+        latitude: newAreaLat ? Number(newAreaLat) : undefined,
+        longitude: newAreaLng ? Number(newAreaLng) : undefined,
+      });
       setNewArea("");
+      setNewAreaLat("");
+      setNewAreaLng("");
       toast.success(`"${name}" added to areas`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not add area");
+    }
+  };
+
+  const handleFindCoordinates = async () => {
+    const name = newArea.trim();
+    if (!name) return;
+    try {
+      const result = await geocodeArea.mutateAsync(name);
+      if (!result) {
+        toast.error(`Couldn't find "${name}" in Karnataka — enter the coordinates manually`);
+        return;
+      }
+      setNewAreaLat(String(result.latitude));
+      setNewAreaLng(String(result.longitude));
+      toast.success(`Found: ${result.displayName}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not look up coordinates");
     }
   };
 
@@ -93,6 +121,7 @@ export function MasterDataPage() {
   const areaColumns: Column<Area>[] = [
     { key: "branch", header: "Branch", render: (a) => a.branch?.name ?? "—" },
     { key: "name", header: "Area", render: (a) => a.name },
+    { key: "distance", header: "Distance from branch", render: (a) => (a.distanceKm != null ? `${a.distanceKm} km` : "—") },
     {
       key: "actions",
       header: "",
@@ -153,29 +182,51 @@ export function MasterDataPage() {
             </>
           ) : (
             <>
-              <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+              <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "var(--space-3)" }}>
                 <div style={{ width: 220 }}>
                   <Select label="Branch" placeholder="Choose a branch" options={branchOptions} value={newAreaBranchId} onChange={(e) => setNewAreaBranchId(e.target.value)} />
                 </div>
-                <TextField
-                  label="Add an area"
-                  placeholder="e.g. Koramangala"
-                  value={newArea}
-                  onChange={(e) => setNewArea(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddArea();
-                    }
-                  }}
-                />
+                <div style={{ width: 220 }}>
+                  <TextField
+                    label="Add an area"
+                    placeholder="e.g. Koramangala"
+                    value={newArea}
+                    onChange={(e) => setNewArea(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddArea();
+                      }
+                    }}
+                  />
+                </div>
+                <Button variant="secondary" onClick={handleFindCoordinates} loading={geocodeArea.isPending} disabled={!newArea.trim()}>
+                  Find coordinates
+                </Button>
                 <Button onClick={handleAddArea} loading={createArea.isPending} disabled={!newArea.trim() || !newAreaBranchId}>
                   + Add
                 </Button>
               </div>
 
-              <div style={{ width: 220, marginBottom: "var(--space-4)" }}>
-                <Select label="Filter by branch" placeholder="All branches" options={branchOptions} value={areaBranchId} onChange={(e) => setAreaBranchId(e.target.value)} />
+              <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                <div style={{ width: 160 }}>
+                  <TextField label="Latitude" type="number" step="any" value={newAreaLat} onChange={(e) => setNewAreaLat(e.target.value)} />
+                </div>
+                <div style={{ width: 160 }}>
+                  <TextField label="Longitude" type="number" step="any" value={newAreaLng} onChange={(e) => setNewAreaLng(e.target.value)} />
+                </div>
+                <p style={{ margin: 0, color: "var(--text-tertiary)", fontSize: "var(--text-sm)" }}>
+                  Optional — filled automatically by "Find coordinates," or enter manually.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                <div style={{ width: 220 }}>
+                  <Select label="Filter by branch" placeholder="All branches" options={branchOptions} value={areaBranchId} onChange={(e) => setAreaBranchId(e.target.value)} />
+                </div>
+                <div style={{ width: 220 }}>
+                  <TextField label="Filter by area" placeholder="Search area name" value={areaSearch} onChange={(e) => setAreaSearch(e.target.value)} />
+                </div>
               </div>
 
               <DataTable

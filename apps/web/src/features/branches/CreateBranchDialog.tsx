@@ -18,6 +18,8 @@ const schema = z.object({
   contactEmail: z.string().email("Enter a valid email"),
   contactPhone: z.string().optional(),
   address: z.string().optional(),
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
   adminName: z.string().min(2, "Required"),
   password: z
     .string()
@@ -47,7 +49,12 @@ export function CreateBranchDialog({ open, onClose }: { open: boolean; onClose: 
 
   const onSubmit = async (values: FormValues) => {
     try {
-      const result = await createBranch.mutateAsync({ ...values, password: values.password || undefined });
+      const result = await createBranch.mutateAsync({
+        ...values,
+        password: values.password || undefined,
+        latitude: values.latitude ? Number(values.latitude) : undefined,
+        longitude: values.longitude ? Number(values.longitude) : undefined,
+      });
       setCredentials(result.adminCredentials);
       toast.success(`Branch "${result.branch.name}" created`);
     } catch (err) {
@@ -107,6 +114,17 @@ export function CreateBranchDialog({ open, onClose }: { open: boolean; onClose: 
         />
         <TextField label="Office contact phone" error={errors.contactPhone?.message} {...register("contactPhone")} />
         <TextField label="Address" error={errors.address?.message} {...register("address")} />
+        <div style={{ display: "flex", gap: "16px" }}>
+          <TextField
+            label="Latitude"
+            type="number"
+            step="any"
+            hint="Optional — from Google Maps, used to show branch-to-area distances"
+            error={errors.latitude?.message}
+            {...register("latitude")}
+          />
+          <TextField label="Longitude" type="number" step="any" error={errors.longitude?.message} {...register("longitude")} />
+        </div>
         <TextField
           label="Office assistant name"
           error={errors.adminName?.message}

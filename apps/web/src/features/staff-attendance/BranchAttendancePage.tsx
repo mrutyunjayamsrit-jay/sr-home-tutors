@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { Card, Button, TextField, DataTable, Badge, Alert, toast } from "@/components/ui";
+import { Card, Button, TextField, DataTable, Badge, Alert, StatCard, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useCheckIn, useCheckOut, useMyAttendanceHistory, useTodayAttendance } from "./api";
 import { MIN_CHECKOUT_GAP_MINUTES, combineTodayTime } from "./constants";
@@ -15,6 +15,17 @@ function nowHHMM() {
 function formatTime(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function workedMinutes(r: StaffAttendanceRecord) {
+  if (!r.loginAt || !r.logoutAt) return null;
+  return (new Date(r.logoutAt).getTime() - new Date(r.loginAt).getTime()) / 60000;
+}
+
+function formatHours(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  return `${hours}h ${String(mins).padStart(2, "0")}m`;
 }
 
 const STATUS_TONE: Record<StaffAttendanceStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -38,6 +49,13 @@ export function BranchAttendancePage() {
   const record = today.data ?? null;
   const hasCheckedIn = Boolean(record?.loginAt);
   const hasCheckedOut = Boolean(record?.logoutAt);
+
+  // This month's history already comes scoped to the current month by
+  // default (see staff-attendance.service.ts listMine) — summarized here
+  // rather than refetched, so it always matches what the table below shows.
+  const historyRows = history.data ?? [];
+  const daysWorked = historyRows.filter((r) => r.loginAt).length;
+  const totalWorkedMinutes = historyRows.reduce((sum, r) => sum + (workedMinutes(r) ?? 0), 0);
 
   const handleCheckIn = async () => {
     try {
@@ -74,6 +92,14 @@ export function BranchAttendancePage() {
     },
     { key: "loginAt", header: "Check-in", render: (r) => formatTime(r.loginAt) },
     { key: "logoutAt", header: "Check-out", render: (r) => formatTime(r.logoutAt) },
+    {
+      key: "hours",
+      header: "Working time",
+      render: (r) => {
+        const minutes = workedMinutes(r);
+        return minutes == null ? "—" : formatHours(minutes);
+      },
+    },
     { key: "status", header: "Status", render: (r) => <Badge tone={STATUS_TONE[r.status]}>{r.status.replace("_", " ")}</Badge> },
   ];
 
@@ -157,9 +183,13 @@ export function BranchAttendancePage() {
         </Card>
 
         <h2 style={{ fontSize: "var(--text-lg)" }}>Recent history</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "var(--space-4)", maxWidth: 420, marginBottom: "var(--space-4)" }}>
+          <StatCard label="Days worked" value={daysWorked} loading={history.isLoading} />
+          <StatCard label="Working time" value={formatHours(totalWorkedMinutes)} loading={history.isLoading} />
+        </div>
         <DataTable
           columns={columns}
-          rows={history.data ?? []}
+          rows={historyRows}
           rowKey={(r) => r.id}
           isLoading={history.isLoading}
           emptyTitle="No attendance recorded yet"

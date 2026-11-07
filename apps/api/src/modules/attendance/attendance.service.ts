@@ -46,7 +46,7 @@ async function loadSessionForTutorMark(sessionId: string, actor: Actor) {
       assignment: {
         select: {
           tutorId: true,
-          student: { select: { name: true, parent: { select: { address: true, latitude: true, longitude: true } } } },
+          student: { select: { name: true, parent: { select: { address: true, latitude: true, longitude: true, branchId: true, area: true } } } },
         },
       },
     },
@@ -80,18 +80,47 @@ function assertMinCheckoutGap(checkInAt: Date, checkOutAt: Date) {
   }
 }
 
-/** Verifies the tutor's device coordinates against the parent's home, or throws with a structured reason the frontend already knows how to render. */
-function assertWithinRange(coords: LocationCoordsInput, parent: { latitude: unknown; longitude: unknown }, studentName: string) {
-  if (parent.latitude == null || parent.longitude == null) {
+/**
+ * The parent's own home GPS (set from their dashboard, or captured
+ * best-effort on the public enquiry form) is the precise, preferred target.
+ * Many parents never set that, though — so when it's missing this falls
+ * back to the coordinates of the branch's Area matching the parent's
+ * free-form `area` field (see master-data's Area.latitude/longitude,
+ * geocoded via Nominatim). That's a locality-level fix, not a doorstep, so
+ * callers should treat an AREA-sourced match as looser than a PARENT one.
+ */
+async function resolveTargetLocation(
+  parent: { latitude: unknown; longitude: unknown; branchId: string; area: string | null },
+): Promise<{ latitude: number; longitude: number; source: "PARENT" | "AREA" } | null> {
+  if (parent.latitude != null && parent.longitude != null) {
+    return { latitude: Number(parent.latitude), longitude: Number(parent.longitude), source: "PARENT" };
+  }
+  if (!parent.area) return null;
+  const area = await prisma.area.findFirst({ where: { branchId: parent.branchId, name: parent.area } });
+  if (!area || area.latitude == null || area.longitude == null) return null;
+  return { latitude: area.latitude, longitude: area.longitude, source: "AREA" };
+}
+
+/** Verifies the tutor's device coordinates against the parent's home (or, failing that, their assigned area), or throws with a structured reason the frontend already knows how to render. */
+async function assertWithinRange(
+  coords: LocationCoordsInput,
+  parent: { latitude: unknown; longitude: unknown; branchId: string; area: string | null },
+  studentName: string,
+) {
+  const target = await resolveTargetLocation(parent);
+  if (!target) {
     throw new ValidationError(
-      `${studentName}'s home location isn't on file yet — enter your area instead, or ask the parent to set it from their dashboard`,
+      `${studentName}'s home location isn't on file, and their area doesn't have coordinates set — enter your area instead, or ask the parent to set their location from their dashboard`,
       { reason: "NO_PARENT_LOCATION" },
     );
   }
-  const distanceMeters = haversineDistanceMeters(coords.latitude, coords.longitude, Number(parent.latitude), Number(parent.longitude));
-  const radius = env.ATTENDANCE_GEOFENCE_RADIUS_METERS;
+  const distanceMeters = haversineDistanceMeters(coords.latitude, coords.longitude, target.latitude, target.longitude);
+  // An area fix is locality-level, not doorstep-level — give it extra slack
+  // over the normal geofence so a real visit at the right locality isn't
+  // rejected for being a street or two off from the area's reference point.
+  const radius = target.source === "AREA" ? env.ATTENDANCE_GEOFENCE_RADIUS_METERS * 5 : env.ATTENDANCE_GEOFENCE_RADIUS_METERS;
   if (distanceMeters > radius) {
-    throw new ValidationError(`You're ${Math.round(distanceMeters)}m from ${studentName}'s home — must be within ${radius}m here`, {
+    throw new ValidationError(`You're ${Math.round(distanceMeters)}m from ${studentName}'s ${target.source === "AREA" ? "area" : "home"} — must be within ${radius}m here`, {
       reason: "OUT_OF_RANGE",
       distanceMeters: Math.round(distanceMeters),
     });
@@ -202,7 +231,7 @@ export const attendanceService = {
         assignment: {
           select: {
             tutorId: true,
-            student: { select: { parent: { select: { latitude: true, longitude: true } } } },
+            student: { select: { parent: { select: { latitude: true, longitude: true, branchId: true, area: true } } } },
           },
         },
       },
@@ -215,12 +244,14 @@ export const attendanceService = {
     }
 
     const parent = session.assignment.student.parent;
-    if (parent.latitude == null || parent.longitude == null) {
+    const target = await resolveTargetLocation(parent);
+    if (!target) {
       return { withinRange: false, distanceMeters: null, reason: "NO_PARENT_LOCATION" as const };
     }
 
-    const distanceMeters = Math.round(haversineDistanceMeters(coords.latitude, coords.longitude, Number(parent.latitude), Number(parent.longitude)));
-    const withinRange = distanceMeters <= env.ATTENDANCE_GEOFENCE_RADIUS_METERS;
+    const distanceMeters = Math.round(haversineDistanceMeters(coords.latitude, coords.longitude, target.latitude, target.longitude));
+    const radius = target.source === "AREA" ? env.ATTENDANCE_GEOFENCE_RADIUS_METERS * 5 : env.ATTENDANCE_GEOFENCE_RADIUS_METERS;
+    const withinRange = distanceMeters <= radius;
     return { withinRange, distanceMeters, reason: withinRange ? ("IN_RANGE" as const) : ("OUT_OF_RANGE" as const) };
   },
 
@@ -239,7 +270,7 @@ export const attendanceService = {
     }
 
     const parent = session.assignment.student.parent;
-    const distanceMeters = assertWithinRange(input, parent, session.assignment.student.name);
+    const distanceMeters = await assertWithinRange(input, parent, session.assignment.student.name);
 
     return prisma.classSession.update({
       where: { id: sessionId },
@@ -290,7 +321,7 @@ export const attendanceService = {
     assertMinCheckoutGap(session.tutorCheckIn, tutorCheckOut);
 
     const parent = session.assignment.student.parent;
-    assertWithinRange(input, parent, session.assignment.student.name);
+    await assertWithinRange(input, parent, session.assignment.student.name);
 
     const actualDurationMinutes = Math.round((tutorCheckOut.getTime() - session.tutorCheckIn.getTime()) / 60000);
     return prisma.classSession.update({

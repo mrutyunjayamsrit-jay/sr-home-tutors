@@ -37,6 +37,11 @@ export const authRepository = {
     });
   },
 
+  /** A successful login is itself proof the account is in use — promotes an admin-issued PENDING_ACTIVATION login to ACTIVE. No-ops otherwise (already ACTIVE, or DISABLED, which login() rejects before this is ever called). */
+  activateIfPending(userId: string) {
+    return prisma.user.updateMany({ where: { id: userId, status: "PENDING_ACTIVATION" }, data: { status: "ACTIVE" } });
+  },
+
   updatePasswordHash(userId: string, passwordHash: string) {
     return prisma.user.update({
       where: { id: userId },

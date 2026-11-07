@@ -11,7 +11,18 @@ function qs(params: Record<string, unknown>) {
   return s ? `?${s}` : "";
 }
 
-export function useAssignments(params: { page?: number; pageSize?: number; status?: string; search?: string; studentId?: string }) {
+export function useAssignments(params: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  search?: string;
+  studentId?: string;
+  studentName?: string;
+  tutorName?: string;
+  subject?: string;
+  from?: string;
+  to?: string;
+}) {
   return useQuery({
     queryKey: ["assignments", params],
     queryFn: () => api.getWithMeta<Assignment[]>(`/assignments${qs(params)}`),
@@ -19,10 +30,10 @@ export function useAssignments(params: { page?: number; pageSize?: number; statu
   });
 }
 
-export function useRunningClasses(search?: string) {
+export function useRunningClasses(params?: { search?: string; studentName?: string; tutorName?: string }) {
   return useQuery({
-    queryKey: ["assignments", "running", search],
-    queryFn: () => api.get<RunningClassRow[]>(`/assignments/running${qs({ search })}`),
+    queryKey: ["assignments", "running", params],
+    queryFn: () => api.get<RunningClassRow[]>(`/assignments/running${qs(params ?? {})}`),
     refetchInterval: 60_000,
   });
 }

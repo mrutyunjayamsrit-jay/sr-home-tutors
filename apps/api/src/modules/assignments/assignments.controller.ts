@@ -1,7 +1,7 @@
 import { asyncHandler } from "@/common/utils/asyncHandler";
 import { created, ok, paginationMeta } from "@/common/utils/apiResponse";
 import { assignmentsService } from "./assignments.service";
-import { createAssignmentSchema, updateAssignmentStatusSchema, listAssignmentsQuerySchema } from "./assignments.types";
+import { createAssignmentSchema, updateAssignmentStatusSchema, listAssignmentsQuerySchema, listRunningClassesQuerySchema } from "./assignments.types";
 
 export const assignmentsController = {
   list: asyncHandler(async (req, res) => {
@@ -24,9 +24,8 @@ export const assignmentsController = {
     ok(res, assignment);
   }),
   runningClasses: asyncHandler(async (req, res) => {
-    const branchId = typeof req.query.branchId === "string" ? req.query.branchId : undefined;
-    const search = typeof req.query.search === "string" ? req.query.search : undefined;
-    const rows = await assignmentsService.runningClasses({ branchId, search }, req.user!);
+    const query = listRunningClassesQuerySchema.parse(req.query);
+    const rows = await assignmentsService.runningClasses(query, req.user!);
     ok(res, rows);
   }),
 };

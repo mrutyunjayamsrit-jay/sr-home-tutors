@@ -10,12 +10,13 @@ import type { Prisma } from "@prisma/client";
  * nothing — there's no fabricated data standing in for them.
  */
 export const reportsRepository = {
-  assignmentsInRange(from: Date, to: Date, branchId?: string, tutorId?: string, tutorName?: string, studentId?: string) {
+  assignmentsInRange(from: Date, to: Date, branchId?: string, tutorId?: string, tutorName?: string, studentId?: string, studentName?: string) {
     const where: Prisma.AssignmentWhereInput = {
       ...(branchId ? { branchId } : {}),
       ...(tutorId ? { tutorId } : {}),
       ...(studentId ? { studentId } : {}),
       ...(tutorName ? { tutor: { name: { contains: tutorName, mode: "insensitive" } } } : {}),
+      ...(studentName ? { student: { name: { contains: studentName, mode: "insensitive" } } } : {}),
       startDate: { lte: to },
       OR: [{ endDate: null }, { endDate: { gte: from } }],
     };
@@ -102,6 +103,41 @@ export const reportsRepository = {
   /** Full invoice history for one student — not date-range-limited, unlike the report list, since a single student's billing history is small and more useful shown in full. */
   studentFeeInvoicesForStudent(studentId: string) {
     return prisma.studentFeeInvoice.findMany({ where: { studentId }, orderBy: { createdAt: "desc" } });
+  },
+
+  // ── Profit & loss (Super Admin dashboard) ──────────────────────────────
+  // Revenue/cost are recognized when cash actually moved (paidAt / paidAt
+  // on the payout / the expense's own date), not when the invoice or
+  // payout row was created — a profit/loss figure for "this month" should
+  // reflect money that moved this month, not bills merely raised this month.
+  revenueInRange(from: Date, to: Date, branchId?: string) {
+    return prisma.studentFeeInvoice.aggregate({
+      where: {
+        paidAt: { gte: from, lte: to },
+        ...(branchId ? { student: { parent: { branchId } } } : {}),
+      },
+      _sum: { paidAmount: true },
+    });
+  },
+
+  tutorPayoutsInRange(from: Date, to: Date, branchId?: string) {
+    return prisma.tutorPayout.aggregate({
+      where: {
+        paidAt: { gte: from, lte: to },
+        ...(branchId ? { tutor: { branchId } } : {}),
+      },
+      _sum: { payableAmount: true },
+    });
+  },
+
+  expensesInRange(from: Date, to: Date, branchId?: string) {
+    return prisma.expense.aggregate({
+      where: {
+        expenseDate: { gte: from, lte: to },
+        ...(branchId ? { branchId } : {}),
+      },
+      _sum: { amount: true },
+    });
   },
 
   upsertTutorPayout(data: Prisma.TutorPayoutUncheckedCreateInput) {

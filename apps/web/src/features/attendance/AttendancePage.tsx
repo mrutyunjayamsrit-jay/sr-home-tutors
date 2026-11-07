@@ -2,7 +2,7 @@ import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import type { NavItem } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { DataTable, Badge } from "@/components/ui";
+import { DataTable, Badge, Select, Button, StatCard } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useSessionsForDate } from "./api";
 import { MarkSessionDialog } from "./MarkSessionDialog";
@@ -18,6 +18,18 @@ const STATUS_TONE: Record<ClassSessionRow["status"], "neutral" | "success" | "da
   ABSENT_TUTOR: "danger",
   CANCELLED: "warning",
 };
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "SCHEDULED", label: "Scheduled" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "ABSENT_STUDENT", label: "Absent (student)" },
+  { value: "ABSENT_TUTOR", label: "Absent (tutor)" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
+const ATTENDANCE_FILTER_OPTIONS = [
+  { value: "PRESENT", label: "Present" },
+  { value: "ABSENT", label: "Absent" },
+];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -44,7 +56,26 @@ export function AttendancePage({ nav = BRANCH_NAV, showTutorColumn = true, allow
   const [date, setDate] = useState(today());
   const [selected, setSelected] = useState<ClassSessionRow | null>(null);
   const [markSession, setMarkSession] = useState<ClassSessionRow | null>(null);
+  const [attendanceFilter, setAttendanceFilter] = useState<"" | "PRESENT" | "ABSENT">("");
+  const [statusFilter, setStatusFilter] = useState<"" | ClassSessionRow["status"]>("");
   const { data, isLoading } = useSessionsForDate(date);
+
+  // Both client-side on the day's already-fetched rows — "Attendance" is a
+  // quick Present/Absent toggle (COMPLETED vs either ABSENT_* status),
+  // "Status" is the exact per-row status shown in the table's own column.
+  const rows = (data ?? []).filter((s) => {
+    if (attendanceFilter === "PRESENT" && s.status !== "COMPLETED") return false;
+    if (attendanceFilter === "ABSENT" && s.status !== "ABSENT_STUDENT" && s.status !== "ABSENT_TUTOR") return false;
+    if (statusFilter && s.status !== statusFilter) return false;
+    return true;
+  });
+  const hasActiveFilters = Boolean(attendanceFilter || statusFilter);
+
+  // Totals for the whole day, regardless of the filters above — the point
+  // of a summary is to show what's there even while the table itself is
+  // narrowed down to a slice of it.
+  const totalPresent = (data ?? []).filter((s) => s.status === "COMPLETED").length;
+  const totalAbsent = (data ?? []).filter((s) => s.status === "ABSENT_STUDENT" || s.status === "ABSENT_TUTOR").length;
 
   const columns: Column<ClassSessionRow>[] = [
     { key: "time", header: "Time", render: (s) => new Date(s.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
@@ -94,28 +125,65 @@ export function AttendancePage({ nav = BRANCH_NAV, showTutorColumn = true, allow
             : "Mark each class as it happens. Click a row to record attendance."}
         </p>
 
-        <div style={{ marginBottom: "var(--space-4)", maxWidth: 220 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-secondary)" }}>
-            <span>Date</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              style={{
-                height: 42,
-                padding: "0 12px",
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--border-strong)",
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--text-base)",
-              }}
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+          <div style={{ width: 220 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-secondary)" }}>
+              <span>Date</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                style={{
+                  height: 42,
+                  padding: "0 12px",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border-strong)",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-base)",
+                }}
+              />
+            </label>
+          </div>
+          <div style={{ width: 160 }}>
+            <Select
+              label="Attendance"
+              placeholder="All"
+              options={ATTENDANCE_FILTER_OPTIONS}
+              value={attendanceFilter}
+              onChange={(e) => setAttendanceFilter(e.target.value as "" | "PRESENT" | "ABSENT")}
             />
-          </label>
+          </div>
+          <div style={{ width: 180 }}>
+            <Select
+              label="Status"
+              placeholder="All"
+              options={STATUS_FILTER_OPTIONS}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "" | ClassSessionRow["status"])}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAttendanceFilter("");
+                setStatusFilter("");
+              }}
+              disabled={!hasActiveFilters}
+            >
+              Clear all filters
+            </Button>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "var(--space-4)", maxWidth: 420, marginBottom: "var(--space-4)" }}>
+          <StatCard label="Present" value={totalPresent} loading={isLoading} />
+          <StatCard label="Absent" value={totalAbsent} loading={isLoading} />
         </div>
 
         <DataTable
           columns={columns}
-          rows={data ?? []}
+          rows={rows}
           rowKey={(s) => s.id}
           isLoading={isLoading}
           emptyTitle="No classes scheduled for this date"

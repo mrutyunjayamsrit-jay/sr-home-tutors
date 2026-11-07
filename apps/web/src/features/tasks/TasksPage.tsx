@@ -6,12 +6,21 @@ import type { Column } from "@/components/ui";
 import { useTasks, useCompleteTask, useDeleteTask } from "./api";
 import { useBranches } from "@/features/branches/api";
 import { CreateTaskDialog } from "./CreateTaskDialog";
-import type { Task, TaskStatus } from "./types";
+import type { Task, TaskDirection, TaskStatus } from "./types";
 
 const STATUS_OPTIONS = [
   { value: "PENDING", label: "Pending" },
   { value: "COMPLETED", label: "Completed" },
 ];
+
+const DIRECTION_OPTIONS = [
+  { value: "TO_BRANCH", label: "Assigned to branch" },
+  { value: "TO_SUPER_ADMIN", label: "Sent by branch" },
+];
+const DIRECTION_LABEL: Record<TaskDirection, string> = {
+  TO_BRANCH: "To branch",
+  TO_SUPER_ADMIN: "From branch",
+};
 
 function isOverdue(task: Task) {
   return task.status === "PENDING" && Boolean(task.dueDate) && new Date(task.dueDate!) < new Date(new Date().toDateString());
@@ -30,12 +39,13 @@ function formatDate(iso: string | null) {
 export function TasksPage() {
   const [branchId, setBranchId] = useState("");
   const [status, setStatus] = useState<TaskStatus | "">("");
+  const [direction, setDirection] = useState<TaskDirection | "">("");
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data: branches } = useBranches({ page: 1, pageSize: 100 });
   const branchOptions = (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name }));
 
-  const tasks = useTasks({ branchId: branchId || undefined, status: status || undefined, pageSize: 100 });
+  const tasks = useTasks({ branchId: branchId || undefined, status: status || undefined, direction: direction || undefined, pageSize: 100 });
   const completeTask = useCompleteTask();
   const deleteTask = useDeleteTask();
 
@@ -59,8 +69,11 @@ export function TasksPage() {
 
   const columns: Column<Task>[] = [
     { key: "branch", header: "Branch", render: (t) => t.branch?.name ?? "—" },
+    { key: "direction", header: "Direction", render: (t) => <Badge tone={t.direction === "TO_SUPER_ADMIN" ? "info" : "neutral"}>{DIRECTION_LABEL[t.direction]}</Badge> },
     { key: "title", header: "Task", render: (t) => <strong>{t.title}</strong> },
     { key: "description", header: "Description", render: (t) => t.description ?? "—" },
+    { key: "createdAt", header: "Created", render: (t) => formatDate(t.createdAt) },
+    { key: "assignedDate", header: "Assigned", render: (t) => formatDate(t.assignedDate) },
     {
       key: "dueDate",
       header: "Due",
@@ -125,6 +138,15 @@ export function TasksPage() {
               options={STATUS_OPTIONS}
               value={status}
               onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
+            />
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <Select
+              label="Direction"
+              placeholder="Both"
+              options={DIRECTION_OPTIONS}
+              value={direction}
+              onChange={(e) => setDirection(e.target.value as TaskDirection | "")}
             />
           </div>
         </div>

@@ -22,6 +22,9 @@ export const usersService = {
         username: u.username,
         status: u.status,
         branch: u.branch,
+        // The attendance/detail dialogs (Users & Roles row click) key off
+        // the Tutor/Student *profile* id, not the login's own User.id.
+        profileId: u.tutorProfile?.id ?? u.studentProfile?.id ?? null,
         lastLoginAt: u.lastLoginAt,
         createdAt: u.createdAt,
       })),

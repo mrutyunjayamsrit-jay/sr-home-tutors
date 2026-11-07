@@ -44,7 +44,23 @@ export const enquiriesService = {
   // A tutor referring another tutor only ever sees referrals THEY
   // submitted (see assertOwnEnquiryAccess) — the rest of the branch's
   // tutor-enquiry pipeline stays office-only.
-  async listTutorEnquiries(params: { page: number; pageSize: number; search?: string; status?: string; branchId?: string }, actor: Actor) {
+  async listTutorEnquiries(
+    params: {
+      page: number;
+      pageSize: number;
+      search?: string;
+      status?: string;
+      branchId?: string;
+      gender?: string;
+      contactNumber?: string;
+      education?: string;
+      subject?: string;
+      source?: "WEBSITE" | "STAFF";
+      from?: Date;
+      to?: Date;
+    },
+    actor: Actor,
+  ) {
     const branchId = actor.role === "BRANCH_ADMIN" || actor.role === "TUTOR" ? actor.branchId ?? undefined : params.branchId;
     const createdById = actor.role === "TUTOR" ? actor.id : undefined;
     return enquiriesRepository.listTutorEnquiries({ ...params, branchId, createdById });
@@ -73,6 +89,7 @@ export const enquiriesService = {
       subjectsInterested: input.subjectsInterested,
       areasInterested: input.areasInterested,
       notes: input.notes,
+      enquiryDate: input.enquiryDate ?? new Date(),
       createdById: actor.id,
       status: "NEW",
     });
@@ -166,7 +183,19 @@ export const enquiriesService = {
   // referrals THEY submitted (see assertOwnEnquiryAccess) — the rest of
   // the branch's enquiry pipeline stays office-only, same reasoning as
   // the branch scoping below.
-  async listParentEnquiries(params: { page: number; pageSize: number; search?: string; status?: string; branchId?: string }, actor: Actor) {
+  async listParentEnquiries(
+    params: {
+      page: number;
+      pageSize: number;
+      search?: string;
+      status?: string;
+      branchId?: string;
+      source?: "WEBSITE" | "STAFF";
+      from?: Date;
+      to?: Date;
+    },
+    actor: Actor,
+  ) {
     const branchId =
       actor.role === "BRANCH_ADMIN" || actor.role === "TUTOR" || actor.role === "PARENT"
         ? actor.branchId ?? undefined
@@ -200,6 +229,7 @@ export const enquiriesService = {
       feesPrescribed: input.feesPrescribed,
       agreedFinalFees: input.agreedFinalFees,
       parentQueries: input.parentQueries,
+      enquiryDate: input.enquiryDate ?? new Date(),
       createdById: actor.id,
       status: "NEW",
     });

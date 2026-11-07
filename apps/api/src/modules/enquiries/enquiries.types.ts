@@ -22,6 +22,8 @@ export const createTutorEnquirySchema = z.object({
   subjectsInterested: z.array(z.string().min(1).max(60)).default([]),
   areasInterested: z.array(z.string().min(1).max(120)).default([]),
   notes: optionalString(z.string().max(2000)),
+  // Defaults to today when omitted — see enquiries.service.ts createTutorEnquiry.
+  enquiryDate: z.coerce.date().optional(),
 });
 export type CreateTutorEnquiryInput = z.infer<typeof createTutorEnquirySchema>;
 
@@ -53,6 +55,8 @@ export const createParentEnquirySchema = z.object({
   // in Reports (see reports.service.ts's parentEnquiryFees).
   agreedFinalFees: z.coerce.number().positive().optional(),
   parentQueries: optionalString(z.string().max(2000)),
+  // Defaults to today when omitted — see enquiries.service.ts createParentEnquiry.
+  enquiryDate: z.coerce.date().optional(),
 });
 export type CreateParentEnquiryInput = z.infer<typeof createParentEnquirySchema>;
 
@@ -83,6 +87,21 @@ export const listEnquiriesQuerySchema = z.object({
   search: z.string().optional(),
   status: z.enum(ENQUIRY_STATUSES).optional(),
   branchId: z.string().cuid().optional(),
+  // Tutor-enquiry filters (ignored by the parent-enquiry listing, which has
+  // no gender/education field of its own) — see EnquiriesPage.tsx's filter
+  // row, which mirrors the Tutor Enquiries table's own columns.
+  gender: z.enum(GENDERS).optional(),
+  contactNumber: z.string().optional(),
+  education: z.string().optional(),
+  subject: z.string().optional(),
+  // Whether the enquiry came from the public website form (createdById
+  // "PUBLIC_WEBSITE") or was entered by staff — same distinction the
+  // existing "Source" column already renders.
+  source: z.enum(["WEBSITE", "STAFF"]).optional(),
+  // Range filter on enquiryDate (the date the enquiry was actually raised),
+  // not createdAt.
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 export const enquiryIdParamSchema = z.object({ enquiryId: z.string().cuid() });

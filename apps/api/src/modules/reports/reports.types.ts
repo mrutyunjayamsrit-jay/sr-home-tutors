@@ -33,6 +33,21 @@ export const markTutorPaidSchema = z.object({
 });
 export type MarkTutorPaidInput = z.infer<typeof markTutorPaidSchema>;
 
+/** Org-wide (or single-branch, if given) profit/loss window — Super Admin only, see reports.service.ts profitLoss. */
+export const profitLossQuerySchema = z.object({
+  from: istFromDate,
+  to: istToDate,
+  branchId: z.string().cuid().optional(),
+});
+export type ProfitLossQuery = z.infer<typeof profitLossQuerySchema>;
+
+/** Org-wide (or single-branch) profit/loss, one point per of the last N IST calendar months — Super Admin only, see reports.service.ts profitLossTrend. */
+export const profitLossTrendQuerySchema = z.object({
+  branchId: z.string().cuid().optional(),
+  months: z.coerce.number().int().positive().max(24).default(6),
+});
+export type ProfitLossTrendQuery = z.infer<typeof profitLossTrendQuerySchema>;
+
 export const tutorIdParamSchema = z.object({ tutorId: z.string().cuid() });
 export const studentIdParamSchema = z.object({ studentId: z.string().cuid() });
 

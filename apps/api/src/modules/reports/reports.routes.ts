@@ -3,7 +3,15 @@ import { reportsController } from "./reports.controller";
 import { authenticate } from "@/middleware/authenticate";
 import { authorize } from "@/middleware/authorize";
 import { validate } from "@/middleware/validate";
-import { reportQuerySchema, markTutorPaidSchema, tutorIdParamSchema, studentIdParamSchema, detailQuerySchema } from "./reports.types";
+import {
+  reportQuerySchema,
+  markTutorPaidSchema,
+  tutorIdParamSchema,
+  studentIdParamSchema,
+  detailQuerySchema,
+  profitLossQuerySchema,
+  profitLossTrendQuerySchema,
+} from "./reports.types";
 
 export const reportsRouter = Router();
 
@@ -30,6 +38,11 @@ reportsRouter.post(
   validate({ params: tutorIdParamSchema, body: markTutorPaidSchema }),
   reportsController.markTutorPaid,
 );
+// Super Admin only — enforced again in the controller (the router-level
+// authorize above allows BRANCH_ADMIN/TUTOR for every other report here).
+reportsRouter.get("/profit-loss", validate({ query: profitLossQuerySchema }), reportsController.profitLoss);
+reportsRouter.get("/profit-loss-trend", validate({ query: profitLossTrendQuerySchema }), reportsController.profitLossTrend);
+
 reportsRouter.get("/fees/students", validateQuery, reportsController.studentFees);
 reportsRouter.get("/fees/enquiries", validateQuery, reportsController.parentEnquiryFees);
 

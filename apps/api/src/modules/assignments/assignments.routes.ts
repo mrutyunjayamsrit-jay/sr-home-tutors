@@ -3,7 +3,13 @@ import { assignmentsController } from "./assignments.controller";
 import { authenticate } from "@/middleware/authenticate";
 import { authorize } from "@/middleware/authorize";
 import { validate } from "@/middleware/validate";
-import { createAssignmentSchema, updateAssignmentStatusSchema, listAssignmentsQuerySchema, assignmentIdParamSchema } from "./assignments.types";
+import {
+  createAssignmentSchema,
+  updateAssignmentStatusSchema,
+  listAssignmentsQuerySchema,
+  listRunningClassesQuerySchema,
+  assignmentIdParamSchema,
+} from "./assignments.types";
 
 export const assignmentsRouter = Router();
 
@@ -16,7 +22,7 @@ assignmentsRouter.use(authenticate);
 const readAccess = authorize("SUPER_ADMIN", "BRANCH_ADMIN", "TUTOR", "PARENT");
 const writeAccess = authorize("SUPER_ADMIN", "BRANCH_ADMIN");
 
-assignmentsRouter.get("/running", readAccess, assignmentsController.runningClasses);
+assignmentsRouter.get("/running", readAccess, validate({ query: listRunningClassesQuerySchema }), assignmentsController.runningClasses);
 assignmentsRouter.get("/", readAccess, validate({ query: listAssignmentsQuerySchema }), assignmentsController.list);
 assignmentsRouter.post("/", writeAccess, validate({ body: createAssignmentSchema }), assignmentsController.create);
 assignmentsRouter.get("/:assignmentId", readAccess, validate({ params: assignmentIdParamSchema }), assignmentsController.get);

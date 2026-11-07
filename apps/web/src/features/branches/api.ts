@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/apiClient";
 import type { ApiMeta } from "@/lib/apiClient";
-import type { Branch, BranchStats, CreateBranchInput, CreateBranchResponse, OrgSummary, UpdateBranchInput } from "./types";
+import type { AttendanceTrendPoint, Branch, BranchStats, CreateBranchInput, CreateBranchResponse, OrgSummary, UpdateBranchInput } from "./types";
 
 interface ListParams {
   page?: number;
@@ -57,6 +57,15 @@ export function useBranchStats(branchId: string | undefined) {
   return useQuery({
     queryKey: ["branches", branchId, "stats"],
     queryFn: () => api.get<BranchStats>(`/branches/${branchId}/stats`),
+    enabled: Boolean(branchId),
+  });
+}
+
+/** Last 5 IST days' distinct present-tutor/present-student counts, for the branch dashboard's attendance trend charts. */
+export function useBranchAttendanceTrend(branchId: string | undefined) {
+  return useQuery({
+    queryKey: ["branches", branchId, "attendance-trend"],
+    queryFn: () => api.get<AttendanceTrendPoint[]>(`/branches/${branchId}/attendance-trend`),
     enabled: Boolean(branchId),
   });
 }

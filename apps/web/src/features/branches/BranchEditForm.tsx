@@ -12,6 +12,8 @@ const schema = z.object({
   contactEmail: z.string().email("Enter a valid email"),
   contactPhone: z.string().optional(),
   address: z.string().optional(),
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -34,12 +36,18 @@ export function BranchEditForm({ branch, canToggleActive }: BranchEditFormProps)
       contactEmail: branch.contactEmail ?? "",
       contactPhone: branch.contactPhone ?? "",
       address: branch.address ?? "",
+      latitude: branch.latitude != null ? String(branch.latitude) : "",
+      longitude: branch.longitude != null ? String(branch.longitude) : "",
     },
   });
 
   const onSubmit = async (values: FormValues) => {
     try {
-      await updateBranch.mutateAsync(values);
+      await updateBranch.mutateAsync({
+        ...values,
+        latitude: values.latitude ? Number(values.latitude) : undefined,
+        longitude: values.longitude ? Number(values.longitude) : undefined,
+      });
       toast.success("Branch details saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save changes");
@@ -101,6 +109,17 @@ export function BranchEditForm({ branch, canToggleActive }: BranchEditFormProps)
           {...register("contactPhone")}
         />
         <TextField label="Address" error={errors.address?.message} {...register("address")} />
+        <div style={{ display: "flex", gap: "var(--space-4)" }}>
+          <TextField
+            label="Latitude"
+            type="number"
+            step="any"
+            hint="From Google Maps — used to show branch-to-area distances"
+            error={errors.latitude?.message}
+            {...register("latitude")}
+          />
+          <TextField label="Longitude" type="number" step="any" error={errors.longitude?.message} {...register("longitude")} />
+        </div>
         <Button type="submit" loading={updateBranch.isPending} disabled={!isDirty} style={{ alignSelf: "flex-start" }}>
           Save changes
         </Button>

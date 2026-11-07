@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { DataTable, TextField, Badge, Modal } from "@/components/ui";
+import { DataTable, TextField, Select, Badge, Button, Modal } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useRegisteredTutors, useRegisteredParents } from "./api";
+import { useSubjects } from "@/features/master-data/api";
 import type { RegisteredParent, RegisteredTutor } from "./types";
 import styles from "@/features/reports/ReportsPage.module.css";
 
 type Tab = "tutors" | "parents";
+type StatusFilter = "" | "REGISTERED" | "ASSIGNED" | "ACTIVE" | "INACTIVE";
 
 const STATUS_TONE: Record<string, "neutral" | "info" | "success"> = {
   REGISTERED: "neutral",
@@ -21,14 +23,71 @@ const GENDER_LABEL: Record<string, string> = {
   OTHER: "Other",
 };
 
+const GENDER_FILTER_OPTIONS = [
+  { value: "MALE", label: "Male" },
+  { value: "FEMALE", label: "Female" },
+  { value: "OTHER", label: "Other" },
+];
+const STATUS_FILTER_OPTIONS = [
+  { value: "REGISTERED", label: "Registered" },
+  { value: "ASSIGNED", label: "Assigned" },
+  { value: "ACTIVE", label: "Active" },
+  { value: "INACTIVE", label: "Inactive" },
+];
+
 export function RegistrationPage() {
   const [tab, setTab] = useState<Tab>("tutors");
   const [search, setSearch] = useState("");
   const [viewTutor, setViewTutor] = useState<RegisteredTutor | null>(null);
   const [viewParent, setViewParent] = useState<RegisteredParent | null>(null);
 
-  const tutors = useRegisteredTutors({ page: 1, pageSize: 50, search: search || undefined, status: "ALL" });
-  const parents = useRegisteredParents({ page: 1, pageSize: 50, search: search || undefined, status: "ALL" });
+  // Tutor-tab filters mirror the Registered Tutors table's own columns.
+  const [gender, setGender] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [education, setEducation] = useState("");
+  const [subject, setSubject] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("");
+  const [registeredFrom, setRegisteredFrom] = useState("");
+  const [registeredTo, setRegisteredTo] = useState("");
+
+  const subjects = useSubjects();
+  const subjectFilterOptions = (subjects.data ?? []).map((s) => ({ value: s.name, label: s.name }));
+
+  // "ALL" (everyone except INACTIVE) is the default view when no specific
+  // status is picked — same convention listRegisteredQuerySchema already uses.
+  const tutors = useRegisteredTutors({
+    page: 1,
+    pageSize: 50,
+    search: search || undefined,
+    status: status || "ALL",
+    gender: gender || undefined,
+    contactNumber: contactNumber || undefined,
+    education: education || undefined,
+    subject: subject || undefined,
+    from: registeredFrom || undefined,
+    to: registeredTo || undefined,
+  });
+  const parents = useRegisteredParents({
+    page: 1,
+    pageSize: 50,
+    search: search || undefined,
+    status: status || "ALL",
+    contactNumber: contactNumber || undefined,
+    from: registeredFrom || undefined,
+    to: registeredTo || undefined,
+  });
+
+  const hasActiveFilters = Boolean(search || gender || contactNumber || education || subject || status || registeredFrom || registeredTo);
+  const handleClearFilters = () => {
+    setSearch("");
+    setGender("");
+    setContactNumber("");
+    setEducation("");
+    setSubject("");
+    setStatus("");
+    setRegisteredFrom("");
+    setRegisteredTo("");
+  };
 
   const tutorColumns: Column<RegisteredTutor>[] = [
     { key: "name", header: "Name", render: (t) => <strong>{t.name}</strong> },
@@ -38,6 +97,7 @@ export function RegistrationPage() {
     { key: "subjects", header: "Subjects", render: (t) => t.subjects.join(", ") || "—" },
     { key: "assignments", header: "Assignments", render: (t) => t._count.assignments },
     { key: "status", header: "Status", render: (t) => <Badge tone={STATUS_TONE[t.status] ?? "neutral"}>{t.status}</Badge> },
+    { key: "registeredAt", header: "Registered Date", render: (t) => new Date(t.createdAt).toLocaleDateString() },
   ];
 
   const parentColumns: Column<RegisteredParent>[] = [
@@ -52,6 +112,7 @@ export function RegistrationPage() {
           .join(", ") || "—",
     },
     { key: "status", header: "Status", render: (p) => <Badge tone={STATUS_TONE[p.status] ?? "neutral"}>{p.status}</Badge> },
+    { key: "registeredAt", header: "Registered Date", render: (p) => new Date(p.createdAt).toLocaleDateString() },
   ];
 
   return (
@@ -73,6 +134,39 @@ export function RegistrationPage() {
 
         <div style={{ margin: "var(--space-4) 0", maxWidth: 320 }}>
           <TextField label="Search" placeholder="Search by name or contact" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+          {tab === "tutors" && (
+            <>
+              <div style={{ width: 160 }}>
+                <Select label="Gender" placeholder="All" options={GENDER_FILTER_OPTIONS} value={gender} onChange={(e) => setGender(e.target.value)} />
+              </div>
+              <div style={{ width: 180 }}>
+                <TextField label="Education" placeholder="Search education" value={education} onChange={(e) => setEducation(e.target.value)} />
+              </div>
+              <div style={{ width: 180 }}>
+                <Select label="Subjects" placeholder="All" options={subjectFilterOptions} value={subject} onChange={(e) => setSubject(e.target.value)} />
+              </div>
+            </>
+          )}
+          <div style={{ width: 180 }}>
+            <TextField label="Contact" placeholder="Search contact" value={contactNumber} onChange={(e) => setContactNumber(e.target.value)} />
+          </div>
+          <div style={{ width: 160 }}>
+            <Select label="Status" placeholder="All (active)" options={STATUS_FILTER_OPTIONS} value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} />
+          </div>
+          <div style={{ width: 170 }}>
+            <TextField label="Registered from" type="date" value={registeredFrom} onChange={(e) => setRegisteredFrom(e.target.value)} />
+          </div>
+          <div style={{ width: 170 }}>
+            <TextField label="Registered to" type="date" value={registeredTo} onChange={(e) => setRegisteredTo(e.target.value)} />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <Button variant="ghost" onClick={handleClearFilters} disabled={!hasActiveFilters}>
+              Clear all filters
+            </Button>
+          </div>
         </div>
 
         {tab === "tutors" ? (

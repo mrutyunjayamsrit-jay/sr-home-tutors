@@ -1,13 +1,27 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { ADMIN_NAV } from "@/app/navConfig";
-import { Card, StatCard, Button, Badge, DataTable } from "@/components/ui";
+import { Card, StatCard, Button, Badge, DataTable, Select, TextField } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useBranches, useOrgSummary } from "@/features/branches/api";
 import type { BranchEnquirySummaryRow } from "@/features/branches/types";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useBranchAttendanceOverview } from "@/features/staff-attendance/api";
 import { useTasks } from "@/features/tasks/api";
+import { useProfitLoss, useProfitLossTrend } from "@/features/reports/api";
+import { NetProfitTrendChart } from "./NetProfitTrendChart";
+
+function firstOfMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function formatMoney(n: number) {
+  return `₹${n.toLocaleString("en-IN")}`;
+}
 
 function formatTime(iso: string | null) {
   if (!iso) return "—";
@@ -37,6 +51,14 @@ export function AdminDashboardPage() {
 
   const pendingTasks = useTasks({ status: "PENDING", pageSize: 100 });
   const pendingTaskRows = pendingTasks.data?.data ?? [];
+
+  const [plFrom, setPlFrom] = useState(firstOfMonth());
+  const [plTo, setPlTo] = useState(todayStr());
+  const [plBranchId, setPlBranchId] = useState("");
+  const profitLoss = useProfitLoss({ from: plFrom, to: plTo, branchId: plBranchId || undefined }, true);
+  const pl = profitLoss.data;
+  const profitLossTrend = useProfitLossTrend({ branchId: plBranchId || undefined, months: 6 });
+  const branchOptions = [{ value: "", label: "All branches" }, ...branches.map((b) => ({ value: b.id, label: b.name }))];
 
   const branchEnquiryColumns: Column<BranchEnquirySummaryRow>[] = [
     { key: "branchName", header: "Branch", render: (r) => <strong>{r.branchName}</strong> },
@@ -72,6 +94,47 @@ export function AdminDashboardPage() {
           <StatCard label="Registered tutors" value={orgSummary.data?.totals.registeredTutors ?? 0} loading={orgSummary.isLoading} />
           <StatCard label="Registered students" value={orgSummary.data?.totals.registeredStudents ?? 0} loading={orgSummary.isLoading} />
         </div>
+
+        <Card style={{ marginBottom: "var(--space-6)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Profit &amp; Loss</h2>
+              <p style={{ margin: "4px 0 0", color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>
+                Fees received minus tutor payouts and branch expenses, for the selected window.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "flex-end", flexWrap: "wrap" }}>
+              <TextField label="From" type="date" value={plFrom} onChange={(e) => setPlFrom(e.target.value)} />
+              <TextField label="To" type="date" value={plTo} onChange={(e) => setPlTo(e.target.value)} />
+              <Select label="Branch" value={plBranchId} onChange={(e) => setPlBranchId(e.target.value)} options={branchOptions} />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "var(--space-4)",
+            }}
+          >
+            <StatCard label="Fees received" value={formatMoney(pl?.totalRevenue ?? 0)} loading={profitLoss.isLoading} />
+            <StatCard label="Paid to tutors" value={formatMoney(pl?.totalTutorPayouts ?? 0)} loading={profitLoss.isLoading} />
+            <StatCard label="Branch expenses" value={formatMoney(pl?.totalExpenses ?? 0)} loading={profitLoss.isLoading} />
+            <StatCard
+              label={pl?.isProfit === false ? "Net loss" : "Net profit"}
+              value={
+                <span style={{ color: pl && !pl.isProfit ? "var(--color-danger-500)" : "var(--color-success-500)" }}>
+                  {formatMoney(Math.abs(pl?.netProfit ?? 0))}
+                </span>
+              }
+              loading={profitLoss.isLoading}
+            />
+          </div>
+
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <NetProfitTrendChart points={profitLossTrend.data ?? []} loading={profitLossTrend.isLoading} />
+          </div>
+        </Card>
 
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

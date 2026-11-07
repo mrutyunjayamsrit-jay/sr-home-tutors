@@ -29,17 +29,24 @@ export const feesService = {
         branchId,
         board: input.board,
         classCategory: input.classCategory,
-        ratePerClass: input.ratePerClass,
         billingCycle: input.billingCycle,
         createdById: actor.id,
+        ...(input.billingCycle === "MONTHLY"
+          ? { numberOfSubjects: input.numberOfSubjects, ratePerClass: input.ratePerClass }
+          : { numberOfSubjects: input.numberOfSubjects, totalClasses: input.totalClasses, totalAmount: input.totalAmount }),
       },
     });
   },
 
-  async listRateCards(params: { branchId?: string; board?: string }, actor: Actor) {
+  async listRateCards(params: { branchId?: string; board?: string; classCategory?: string; billingCycle?: string }, actor: Actor) {
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
     return prisma.feeRateCard.findMany({
-      where: { ...(branchId ? { branchId } : {}), ...(params.board ? { board: params.board as Prisma.EnumBoardFilter["equals"] } : {}) },
+      where: {
+        ...(branchId ? { branchId } : {}),
+        ...(params.board ? { board: params.board as Prisma.EnumBoardFilter["equals"] } : {}),
+        ...(params.classCategory ? { classCategory: { contains: params.classCategory, mode: "insensitive" } } : {}),
+        ...(params.billingCycle ? { billingCycle: params.billingCycle as Prisma.EnumBillingCycleFilter["equals"] } : {}),
+      },
       // No branchId filter for Super Admin means "every branch" — include
       // which branch each row belongs to so that view is actually legible.
       include: { branch: { select: { id: true, name: true } } },
@@ -81,7 +88,18 @@ export const feesService = {
   },
 
   async listInvoices(
-    params: { page: number; pageSize: number; branchId?: string; studentId?: string; status?: string; search?: string },
+    params: {
+      page: number;
+      pageSize: number;
+      branchId?: string;
+      studentId?: string;
+      status?: string;
+      search?: string;
+      period?: string;
+      paymentMethod?: string;
+      paidFrom?: Date;
+      paidTo?: Date;
+    },
     actor: Actor,
   ) {
     // A parent only ever sees their own children's invoices — never
@@ -105,6 +123,11 @@ export const feesService = {
       ...(params.status ? { status: params.status as Prisma.EnumInvoiceStatusFilter["equals"] } : {}),
       ...(actor.role !== "PARENT" && branchId ? { student: { parent: { branchId } } } : {}),
       ...(actor.role !== "PARENT" && params.search ? { student: { name: { contains: params.search, mode: "insensitive" } } } : {}),
+      ...(params.period ? { period: { contains: params.period, mode: "insensitive" } } : {}),
+      ...(params.paymentMethod ? { paymentMethod: { contains: params.paymentMethod, mode: "insensitive" } } : {}),
+      ...(params.paidFrom || params.paidTo
+        ? { paidAt: { ...(params.paidFrom ? { gte: params.paidFrom } : {}), ...(params.paidTo ? { lte: params.paidTo } : {}) } }
+        : {}),
     };
     const [items, total] = await Promise.all([
       prisma.studentFeeInvoice.findMany({
@@ -167,6 +190,24 @@ export const feesService = {
         paidAt: input.paidAt ?? new Date(),
         paymentMethod: input.paymentMethod,
       },
+    });
+  },
+
+  /**
+   * Super Admin's sign-off on a payment the branch office already
+   * recorded — the branch is the one that does Record Payment/Add Proof;
+   * Super Admin's own job on this invoice is to review and approve it, not
+   * to touch the payment itself (see fees.routes.ts approveAccess).
+   */
+  async approveInvoice(id: string, actor: Actor) {
+    const invoice = await prisma.studentFeeInvoice.findUnique({ where: { id } });
+    if (!invoice) throw new NotFoundError("Invoice not found");
+    if (Number(invoice.paidAmount) <= 0) {
+      throw new ValidationError("No payment has been recorded on this invoice yet");
+    }
+    return prisma.studentFeeInvoice.update({
+      where: { id },
+      data: { approvedAt: new Date(), approvedById: actor.id },
     });
   },
 };

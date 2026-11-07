@@ -11,6 +11,10 @@ import type { FeeRateCard } from "@/features/fees/types";
  * (a degree/course name) matches the first non-numeric category for that
  * board. Returns undefined — never a guessed number — when nothing lines
  * up, so the field just stays blank and freely editable.
+ *
+ * The matched card's own "price" is a different field depending on its
+ * billing cycle — MONTHLY's is ratePerClass, PACKAGE's is totalAmount (a
+ * fixed bundle price, not a per-class rate) — see rateCardPrice below.
  */
 export function matchRateCard(rateCards: FeeRateCard[], board: string, studentClass: string): FeeRateCard | undefined {
   const forBoard = rateCards.filter((r) => r.board === board);
@@ -32,4 +36,9 @@ export function matchRateCard(rateCards: FeeRateCard[], board: string, studentCl
 
   // A degree/course name — match a category that isn't itself a numeric class range.
   return forBoard.find((r) => !/^\s*\d+\s*(-\s*\d+)?\s*$/.test(r.classCategory));
+}
+
+/** The matched card's own price — ratePerClass for MONTHLY, totalAmount (the whole package's price) for PACKAGE. */
+export function rateCardPrice(rateCard: FeeRateCard): number | null {
+  return rateCard.billingCycle === "PACKAGE" ? rateCard.totalAmount : rateCard.ratePerClass;
 }

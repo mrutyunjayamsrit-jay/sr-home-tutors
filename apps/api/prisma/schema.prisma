@@ -160,6 +160,11 @@ enum TaskStatus {
   COMPLETED
 }
 
+enum TaskDirection {
+  TO_BRANCH
+  TO_SUPER_ADMIN
+}
+
 enum QueryTarget {
   BRANCH
   SUPER_ADMIN
@@ -179,6 +184,11 @@ model Branch {
   name         String
   code         String   @unique
   address      String?
+  // Pasted in from Google Maps, never geocoded automatically — used to show
+  // how far each of the branch's Areas is (see master-data.service.ts
+  // listAreas / common/utils/geo.ts).
+  latitude     Float?
+  longitude    Float?
   contactEmail String?
   contactPhone String?
   isActive     Boolean  @default(true)
@@ -284,6 +294,11 @@ model TutorEnquiry {
   status             EnquiryStatus     @default(NEW)
   notes              String?
   createdById        String
+  // The date the enquiry was actually raised — distinct from createdAt
+  // (when the row was entered into the system), since office staff often
+  // back-enter an enquiry a few days after the real conversation. Defaults
+  // to today; editable on the form like Task.assignedDate.
+  enquiryDate        DateTime          @default(now())
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -330,6 +345,9 @@ model ParentEnquiry {
   parentQueries        String?
   status               EnquiryStatus     @default(NEW)
   createdById          String
+  // Same convention as TutorEnquiry.enquiryDate above — the date the
+  // enquiry was actually raised, editable, distinct from createdAt.
+  enquiryDate          DateTime          @default(now())
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
@@ -360,6 +378,11 @@ model Area {
   id        String   @id @default(cuid())
   branchId  String
   name      String
+  // Same convention as Branch's own latitude/longitude — pasted in from
+  // Google Maps, lets the branch-to-area distance be computed without a
+  // mapping/geocoding service (see master-data.service.ts listAreas).
+  latitude  Float?
+  longitude Float?
   createdAt DateTime @default(now())
 
   branch Branch @relation(fields: [branchId], references: [id])
@@ -563,8 +586,15 @@ model FeeRateCard {
   branchId      String
   board         Board
   classCategory String // e.g. "1-5", "6-10", "11-12", "College"
-  ratePerClass  Decimal      @db.Decimal(10, 2)
   billingCycle  BillingCycle @default(MONTHLY)
+  // MONTHLY: a plain per-class rate. PACKAGE: a fixed bundle — some number
+  // of subjects for a fixed total number of classes at a fixed total price
+  // (e.g. "3 subjects, 100 classes, ₹45,000"), not a per-class rate — see
+  // fees.types.ts's refinement for which fields each cycle actually requires.
+  ratePerClass     Decimal? @db.Decimal(10, 2)
+  numberOfSubjects Int?
+  totalClasses     Int?
+  totalAmount      Decimal? @db.Decimal(10, 2)
   effectiveFrom DateTime     @default(now())
   createdById   String
   createdAt     DateTime     @default(now())
@@ -588,6 +618,12 @@ model StudentFeeInvoice {
   paidAt        DateTime?
   paymentMethod String?
   status        InvoiceStatus @default(PENDING)
+  // Super Admin's sign-off on the payment the branch office recorded —
+  // independent of `status` itself, since a branch marking an invoice PAID
+  // and Super Admin confirming that payment was legitimate are two
+  // different steps (see fees.service.ts approveInvoice).
+  approvedAt    DateTime?
+  approvedById  String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -656,6 +692,10 @@ model Expense {
   amount      Decimal  @db.Decimal(10, 2)
   expenseDate DateTime
   createdById String
+  // Super Admin's sign-off on a branch-raised expense — see
+  // expenses.service.ts approve.
+  approvedAt   DateTime?
+  approvedById String?
   createdAt   DateTime @default(now())
 
   branch Branch @relation(fields: [branchId], references: [id])
@@ -708,17 +748,27 @@ model Announcement {
 // Announcement (broadcast, read-only), a Task always targets exactly one
 // branch and carries real status the branch office acts on.
 model Task {
-  id            String     @id @default(cuid())
+  id            String        @id @default(cuid())
   branchId      String
   title         String
   description   String?
+  // When this was assigned — defaults to now at creation but can be
+  // backdated/postdated, distinct from `createdAt` (the immutable
+  // row-creation timestamp) — see tasks.service.ts create.
+  assignedDate  DateTime      @default(now())
   dueDate       DateTime?
-  status        TaskStatus @default(PENDING)
+  status        TaskStatus    @default(PENDING)
+  // Which way this task runs: Super Admin assigning the branch a task
+  // (the original direction), or a Branch Admin raising one for Super
+  // Admin's attention — same table, same branchId (always the branch this
+  // concerns), just whose action item it is. Defaults to the original
+  // direction so existing rows need no backfill.
+  direction     TaskDirection @default(TO_BRANCH)
   createdById   String
   completedById String?
   completedAt   DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   branch Branch @relation(fields: [branchId], references: [id])
 

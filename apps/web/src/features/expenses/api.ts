@@ -12,10 +12,18 @@ function qs(params: Record<string, string | number | undefined>) {
   return s ? `?${s}` : "";
 }
 
-export function useExpenses(params: { page?: number; pageSize?: number; branchId?: string }) {
+export function useExpenses(params: { page?: number; pageSize?: number; branchId?: string; approvalStatus?: "APPROVED" | "PENDING" }) {
   return useQuery({
     queryKey: ["expenses", params],
-    queryFn: () => api.getWithMeta<Expense[]>(`/expenses${qs({ page: params.page ?? 1, pageSize: params.pageSize ?? 50, branchId: params.branchId })}`),
+    queryFn: () =>
+      api.getWithMeta<Expense[]>(
+        `/expenses${qs({
+          page: params.page ?? 1,
+          pageSize: params.pageSize ?? 50,
+          branchId: params.branchId,
+          approvalStatus: params.approvalStatus,
+        })}`,
+      ),
     placeholderData: (prev) => prev,
   });
 }
@@ -32,6 +40,15 @@ export function useDeleteExpense() {
   const qc = useQueryClient();
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => api.delete<void>(`/expenses/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["expenses"] }),
+  });
+}
+
+/** Super Admin's own sign-off on a branch-raised expense — see expenses.service.ts approve. */
+export function useApproveExpense() {
+  const qc = useQueryClient();
+  return useMutation<Expense, ApiError, string>({
+    mutationFn: (id) => api.post<Expense>(`/expenses/${id}/approve`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["expenses"] }),
   });
 }

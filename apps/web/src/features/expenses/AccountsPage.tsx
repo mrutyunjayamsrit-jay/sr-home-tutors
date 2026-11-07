@@ -4,13 +4,18 @@ import type { NavItem } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
 import { Button, Card, DataTable, Select, Badge, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
-import { useExpenses, useDeleteExpense } from "./api";
+import { useExpenses, useDeleteExpense, useApproveExpense } from "./api";
 import { useBranches } from "@/features/branches/api";
 import { useAuthStore } from "@/features/auth/authStore";
 import { CreateExpenseDialog } from "./CreateExpenseDialog";
 import { ViewDocumentsDialog } from "@/features/documents/ViewDocumentsDialog";
 import type { DocumentsTarget } from "@/features/documents/ViewDocumentsDialog";
 import type { Expense } from "./types";
+
+const APPROVAL_FILTER_OPTIONS = [
+  { value: "APPROVED", label: "Approved" },
+  { value: "PENDING", label: "Pending approval" },
+];
 
 interface AccountsPageProps {
   /** Defaults to the Branch Office nav — pass ADMIN_NAV when mounting this under /admin. Same component either way: Super Admin gets a branch filter/column the office view doesn't need. */
@@ -23,13 +28,20 @@ export function AccountsPage({ nav = BRANCH_NAV }: AccountsPageProps) {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [branchId, setBranchId] = useState("");
+  const [approvalStatus, setApprovalStatus] = useState<"" | "APPROVED" | "PENDING">("");
   const [receiptsTarget, setReceiptsTarget] = useState<DocumentsTarget | null>(null);
 
   const { data: branches } = useBranches({ page: 1, pageSize: 100 }, isSuperAdmin);
   const branchOptions = (branches?.data ?? []).map((b) => ({ value: b.id, label: b.name }));
 
-  const { data, isLoading } = useExpenses({ page: 1, pageSize: 50, branchId: isSuperAdmin ? branchId || undefined : undefined });
+  const { data, isLoading } = useExpenses({
+    page: 1,
+    pageSize: 50,
+    branchId: isSuperAdmin ? branchId || undefined : undefined,
+    approvalStatus: isSuperAdmin ? approvalStatus || undefined : undefined,
+  });
   const deleteExpense = useDeleteExpense();
+  const approveExpense = useApproveExpense();
 
   const totalAmount = (data?.meta as { totalAmount?: number } | undefined)?.totalAmount ?? 0;
 
@@ -39,6 +51,15 @@ export function AccountsPage({ nav = BRANCH_NAV }: AccountsPageProps) {
       toast.success("Expense removed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not remove expense");
+    }
+  };
+
+  const handleApprove = async (expense: Expense) => {
+    try {
+      await approveExpense.mutateAsync(expense.id);
+      toast.success(`Approved "${expense.description}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not approve expense");
     }
   };
 
@@ -58,26 +79,67 @@ export function AccountsPage({ nav = BRANCH_NAV }: AccountsPageProps) {
           <Badge tone="neutral">None</Badge>
         ),
     },
+    ...(isSuperAdmin
+      ? [
+          {
+            key: "approval",
+            header: "Approval",
+            render: (e: Expense) => (e.approvedAt ? <Badge tone="success">Approved</Badge> : <Badge tone="warning">Pending approval</Badge>),
+          } as Column<Expense>,
+        ]
+      : []),
     {
       key: "actions",
       header: "",
-      render: (e) => (
-        <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(ev) => {
-              ev.stopPropagation();
-              setReceiptsTarget({ ownerId: e.id, title: `Receipt — ${e.description}` });
-            }}
-          >
-            {e.receiptCount > 0 ? "View receipt" : "Add receipt"}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={(ev) => { ev.stopPropagation(); handleDelete(e.id); }}>
-            Remove
-          </Button>
-        </div>
-      ),
+      render: (e) =>
+        isSuperAdmin ? (
+          // Adding a receipt is the branch office's job — Super Admin's own
+          // role on an expense is to review and approve it, or remove it.
+          <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setReceiptsTarget({ ownerId: e.id, title: `Receipt — ${e.description}` });
+              }}
+            >
+              View
+            </Button>
+            {!e.approvedAt && (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={approveExpense.isPending}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  handleApprove(e);
+                }}
+              >
+                Approve
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={(ev) => { ev.stopPropagation(); handleDelete(e.id); }}>
+              Remove
+            </Button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setReceiptsTarget({ ownerId: e.id, title: `Receipt — ${e.description}` });
+              }}
+            >
+              {e.receiptCount > 0 ? "View receipt" : "Add receipt"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={(ev) => { ev.stopPropagation(); handleDelete(e.id); }}>
+              Remove
+            </Button>
+          </div>
+        ),
     },
   ];
 
@@ -95,8 +157,19 @@ export function AccountsPage({ nav = BRANCH_NAV }: AccountsPageProps) {
         </div>
 
         {isSuperAdmin && (
-          <div style={{ maxWidth: 260, marginBottom: "var(--space-4)" }}>
-            <Select label="Branch" placeholder="All branches" options={branchOptions} value={branchId} onChange={(e) => setBranchId(e.target.value)} />
+          <div style={{ display: "flex", gap: "var(--space-4)", marginBottom: "var(--space-4)" }}>
+            <div style={{ maxWidth: 260 }}>
+              <Select label="Branch" placeholder="All branches" options={branchOptions} value={branchId} onChange={(e) => setBranchId(e.target.value)} />
+            </div>
+            <div style={{ maxWidth: 220 }}>
+              <Select
+                label="Approval"
+                placeholder="All"
+                options={APPROVAL_FILTER_OPTIONS}
+                value={approvalStatus}
+                onChange={(e) => setApprovalStatus(e.target.value as "" | "APPROVED" | "PENDING")}
+              />
+            </div>
           </div>
         )}
 
@@ -116,7 +189,13 @@ export function AccountsPage({ nav = BRANCH_NAV }: AccountsPageProps) {
       </div>
 
       <CreateExpenseDialog open={createOpen} onClose={() => setCreateOpen(false)} />
-      <ViewDocumentsDialog target={receiptsTarget} onClose={() => setReceiptsTarget(null)} ownerType="EXPENSE" docType="RECEIPT" />
+      <ViewDocumentsDialog
+        target={receiptsTarget}
+        onClose={() => setReceiptsTarget(null)}
+        ownerType="EXPENSE"
+        docType="RECEIPT"
+        canManage={!isSuperAdmin}
+      />
     </AppShell>
   );
 }

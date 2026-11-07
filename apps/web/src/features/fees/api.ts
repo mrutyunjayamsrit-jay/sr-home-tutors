@@ -11,16 +11,20 @@ function qs(params: Record<string, string | number | undefined>) {
   return s ? `?${s}` : "";
 }
 
-export function useRateCards(params: { branchId?: string } = {}) {
+export function useRateCards(params: { branchId?: string; board?: string; classCategory?: string; billingCycle?: string } = {}) {
   return useQuery({
-    queryKey: ["fees", "rate-cards", params.branchId],
+    queryKey: ["fees", "rate-cards", params],
     queryFn: () => api.get<FeeRateCard[]>(`/fees/rate-cards${qs(params)}`),
   });
 }
 
+export type CreateRateCardInput =
+  | { branchId?: string; board: string; classCategory: string; billingCycle: "MONTHLY"; numberOfSubjects: number; ratePerClass: number }
+  | { branchId?: string; board: string; classCategory: string; billingCycle: "PACKAGE"; numberOfSubjects: number; totalClasses: number; totalAmount: number };
+
 export function useCreateRateCard() {
   const qc = useQueryClient();
-  return useMutation<FeeRateCard, ApiError, { branchId?: string; board: string; classCategory: string; ratePerClass: number; billingCycle: string }>({
+  return useMutation<FeeRateCard, ApiError, CreateRateCardInput>({
     mutationFn: (input) => api.post<FeeRateCard>("/fees/rate-cards", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fees", "rate-cards"] }),
   });
@@ -34,7 +38,18 @@ export function useDeleteRateCard() {
   });
 }
 
-export function useInvoices(params: { page?: number; pageSize?: number; status?: string; search?: string; studentId?: string; branchId?: string }) {
+export function useInvoices(params: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  search?: string;
+  studentId?: string;
+  branchId?: string;
+  period?: string;
+  paymentMethod?: string;
+  paidFrom?: string;
+  paidTo?: string;
+}) {
   return useQuery({
     queryKey: ["fees", "invoices", params],
     queryFn: () => api.getWithMeta<StudentFeeInvoice[]>(`/fees/invoices${qs(params)}`),
@@ -54,6 +69,15 @@ export function useRecordPayment() {
   const qc = useQueryClient();
   return useMutation<StudentFeeInvoice, ApiError, { id: string; amount: number; paymentMethod: string }>({
     mutationFn: ({ id, ...body }) => api.post<StudentFeeInvoice>(`/fees/invoices/${id}/payment`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fees", "invoices"] }),
+  });
+}
+
+/** Super Admin's own sign-off on a payment the branch office already recorded — see fees.service.ts approveInvoice. */
+export function useApproveInvoice() {
+  const qc = useQueryClient();
+  return useMutation<StudentFeeInvoice, ApiError, string>({
+    mutationFn: (id) => api.post<StudentFeeInvoice>(`/fees/invoices/${id}/approve`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fees", "invoices"] }),
   });
 }

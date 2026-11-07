@@ -13,3 +13,10 @@ expensesRouter.use(authorize("SUPER_ADMIN", "BRANCH_ADMIN"));
 expensesRouter.get("/", validate({ query: listExpensesQuerySchema }), expensesController.list);
 expensesRouter.post("/", validate({ body: createExpenseSchema }), expensesController.create);
 expensesRouter.delete("/:expenseId", validate({ params: expenseIdParamSchema }), expensesController.remove);
+// Approving a branch-raised expense is Super Admin's own role on it.
+expensesRouter.post(
+  "/:expenseId/approve",
+  authorize("SUPER_ADMIN"),
+  validate({ params: expenseIdParamSchema }),
+  expensesController.approve,
+);

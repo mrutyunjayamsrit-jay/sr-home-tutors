@@ -40,4 +40,8 @@ export const feesController = {
     const invoice = await feesService.recordPayment(req.params.invoiceId!, input, req.user!);
     ok(res, invoice);
   }),
+  approveInvoice: asyncHandler(async (req, res) => {
+    const invoice = await feesService.approveInvoice(req.params.invoiceId!, req.user!);
+    ok(res, invoice);
+  }),
 };

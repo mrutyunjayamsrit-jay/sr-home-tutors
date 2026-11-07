@@ -27,16 +27,22 @@ export function useDeleteSubject() {
 }
 
 // ── Areas — per branch, Super Admin maintains ───────────────────────────
-export function useAreas(params: { branchId?: string } = {}) {
+export function useAreas(params: { branchId?: string; search?: string } = {}) {
   return useQuery({
-    queryKey: ["master-data", "areas", params.branchId],
-    queryFn: () => api.get<Area[]>(`/master-data/areas${params.branchId ? `?branchId=${params.branchId}` : ""}`),
+    queryKey: ["master-data", "areas", params.branchId, params.search],
+    queryFn: () => {
+      const q = new URLSearchParams();
+      if (params.branchId) q.set("branchId", params.branchId);
+      if (params.search) q.set("search", params.search);
+      const s = q.toString();
+      return api.get<Area[]>(`/master-data/areas${s ? `?${s}` : ""}`);
+    },
   });
 }
 
 export function useCreateArea() {
   const qc = useQueryClient();
-  return useMutation<Area, ApiError, { branchId: string; name: string }>({
+  return useMutation<Area, ApiError, { branchId: string; name: string; latitude?: number; longitude?: number }>({
     mutationFn: (input) => api.post<Area>("/master-data/areas", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["master-data", "areas"] }),
   });
@@ -47,5 +53,18 @@ export function useDeleteArea() {
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => api.delete<void>(`/master-data/areas/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["master-data", "areas"] }),
+  });
+}
+
+export interface GeocodeResult {
+  latitude: number;
+  longitude: number;
+  displayName: string;
+}
+
+/** Looks up an area name's coordinates, restricted to Karnataka — see master-data.service.ts geocodeArea. Resolves to null (not an error) when nothing in Karnataka matches confidently. */
+export function useGeocodeArea() {
+  return useMutation<GeocodeResult | null, ApiError, string>({
+    mutationFn: (name) => api.get<GeocodeResult | null>(`/master-data/areas/geocode?q=${encodeURIComponent(name)}`),
   });
 }

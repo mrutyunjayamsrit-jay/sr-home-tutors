@@ -12,6 +12,12 @@ interface ListParams {
   search?: string;
   branchId?: string;
   status?: "REGISTERED" | "ASSIGNED" | "ACTIVE" | "INACTIVE" | "ALL";
+  gender?: "MALE" | "FEMALE" | "OTHER";
+  contactNumber?: string;
+  education?: string;
+  subject?: string;
+  from?: Date;
+  to?: Date;
 }
 
 function effectiveBranchId(actor: Actor, requested: string | undefined) {
@@ -25,12 +31,22 @@ function statusFilter(status: ListParams["status"]) {
   return { status };
 }
 
+function registeredDateFilter(from: Date | undefined, to: Date | undefined) {
+  if (!from && !to) return {};
+  return { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } };
+}
+
 export const registrationService = {
   async listTutors(params: ListParams, actor: Actor) {
     const branchId = effectiveBranchId(actor, params.branchId);
     const where: Prisma.TutorWhereInput = {
       ...statusFilter(params.status),
       ...(branchId ? { branchId } : {}),
+      ...(params.gender ? { gender: params.gender } : {}),
+      ...(params.contactNumber ? { contactNumber: { contains: params.contactNumber } } : {}),
+      ...(params.education ? { education: { contains: params.education, mode: "insensitive" } } : {}),
+      ...(params.subject ? { subjects: { has: params.subject } } : {}),
+      ...registeredDateFilter(params.from, params.to),
       ...(params.search
         ? { OR: [{ name: { contains: params.search, mode: "insensitive" } }, { contactNumber: { contains: params.search } }] }
         : {}),
@@ -39,7 +55,7 @@ export const registrationService = {
       prisma.tutor.findMany({
         where,
         include: { branch: { select: { id: true, name: true } }, _count: { select: { assignments: true } } },
-        orderBy: { createdAt: "desc" },
+        orderBy: { name: "asc" },
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -69,6 +85,8 @@ export const registrationService = {
     const where: Prisma.ParentWhereInput = {
       ...statusFilter(params.status),
       ...(branchId ? { branchId } : {}),
+      ...(params.contactNumber ? { contactNumber: { contains: params.contactNumber } } : {}),
+      ...registeredDateFilter(params.from, params.to),
       ...(params.search
         ? { OR: [{ name: { contains: params.search, mode: "insensitive" } }, { contactNumber: { contains: params.search } }] }
         : {}),
@@ -80,7 +98,7 @@ export const registrationService = {
         branch: { select: { id: true, name: true } },
         students: { select: { id: true, name: true, studentClass: true, board: true, status: true, preferredTutorGender: true } },
       },
-        orderBy: { createdAt: "desc" },
+        orderBy: { name: "asc" },
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

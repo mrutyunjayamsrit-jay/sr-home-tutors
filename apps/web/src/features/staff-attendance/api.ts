@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/apiClient";
-import type { BranchOverviewRow, StaffAttendanceRecord } from "./types";
+import type { BranchOverviewRow, StaffAttendanceRecord, StaffAttendanceSummary } from "./types";
 
 export interface CheckTimeInput {
   /** A full ISO instant, constructed client-side from the browser's own local time — never a bare "HH:mm" (see staff-attendance.types.ts on the API side for why that was a real bug). */
@@ -45,5 +45,18 @@ export function useBranchAttendanceOverview(date?: string) {
   return useQuery({
     queryKey: ["staff-attendance", "overview", date ?? "today"],
     queryFn: () => api.get<BranchOverviewRow[]>(`/staff-attendance/overview${date ? `?date=${date}` : ""}`),
+  });
+}
+
+/** Users & Roles → click a branch office row — real present/absent day counts over a range (defaults to the current month). */
+export function useStaffAttendanceSummary(staffUserId: string | null, range: { from?: string; to?: string }, enabled: boolean) {
+  const params = new URLSearchParams();
+  if (range.from) params.set("from", range.from);
+  if (range.to) params.set("to", range.to);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["staff-attendance", "summary", staffUserId, range],
+    queryFn: () => api.get<StaffAttendanceSummary>(`/staff-attendance/${staffUserId}/summary${qs ? `?${qs}` : ""}`),
+    enabled: enabled && Boolean(staffUserId),
   });
 }

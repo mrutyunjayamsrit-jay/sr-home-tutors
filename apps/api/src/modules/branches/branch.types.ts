@@ -10,6 +10,11 @@ export const createBranchSchema = z.object({
     .max(20)
     .regex(/^[A-Z0-9_-]+$/, "Use uppercase letters, numbers, hyphens or underscores"),
   address: z.string().max(500).optional(),
+  // The branch's own coordinates — used to show how far each of its Areas
+  // is (see master-data.service.ts listAreas). Never geocoded from the
+  // address automatically; Super Admin pastes it from Google Maps.
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
   contactEmail: z.string().email(),
   contactPhone: optionalString(z.string().min(6).max(20)),
   adminName: z.string().min(2).max(120),
@@ -24,6 +29,8 @@ export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 export const updateBranchSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   address: z.string().max(500).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
   contactEmail: optionalString(z.string().email()),
   contactPhone: optionalString(z.string().min(6).max(20)),
   isActive: z.boolean().optional(),

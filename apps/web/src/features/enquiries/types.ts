@@ -21,6 +21,7 @@ export interface TutorEnquiry {
   status: EnquiryStatus;
   notes: string | null;
   createdById: string;
+  enquiryDate: string;
   createdAt: string;
   tutor: { id: string } | null;
 }
@@ -43,6 +44,7 @@ export interface ParentEnquiry {
   parentQueries: string | null;
   status: EnquiryStatus;
   createdById: string;
+  enquiryDate: string;
   createdAt: string;
   parent: { id: string } | null;
 }
@@ -60,6 +62,7 @@ export interface CreateTutorEnquiryInput {
   subjectsInterested: string[];
   areasInterested: string[];
   notes?: string;
+  enquiryDate?: string;
 }
 
 export interface CreateParentEnquiryInput {
@@ -75,6 +78,7 @@ export interface CreateParentEnquiryInput {
   feesPrescribed?: number;
   agreedFinalFees?: number;
   parentQueries?: string;
+  enquiryDate?: string;
 }
 
 export interface ConvertCredentials {

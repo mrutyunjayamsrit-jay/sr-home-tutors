@@ -1,7 +1,7 @@
 import { prisma } from "@/common/prisma";
-import { ForbiddenError, ValidationError } from "@/common/errors/AppError";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/common/errors/AppError";
 import { MIN_CHECKOUT_GAP_MINUTES } from "@/common/constants/attendance";
-import { istStartOfDay, istEndOfDay, istFirstOfMonth } from "@/common/utils/istDate";
+import { istStartOfDay, istEndOfDay, istFirstOfMonth, istNextDay, istDateKey } from "@/common/utils/istDate";
 import type { CheckTimeInput } from "./staff-attendance.types";
 
 interface Actor {
@@ -116,5 +116,57 @@ export const staffAttendanceService = {
       }),
       marked: b.users.some((u) => recordByStaffId.get(u.id)?.loginAt),
     }));
+  },
+
+  /**
+   * Super Admin's "how reliable is this branch office" drill-down (Users &
+   * Roles → click a branch office row) — real present/absent day counts
+   * for one staff login over a date range, defaulting to the current
+   * month. "Absent" here means "a calendar day in range with no check-in
+   * on record", the same definition ensureBranchMissedEscalations uses —
+   * there's no separate flow that ever writes an explicit ABSENT/HALF_DAY/
+   * LEAVE row today (see schema.prisma StaffAttendanceStatus), so it has
+   * to be derived from missing rows rather than read off a status column.
+   */
+  async summaryForUser(staffUserId: string, params: { from?: Date; to?: Date }, actor: Actor) {
+    if (actor.role !== "SUPER_ADMIN") throw new ForbiddenError("Only Super Admin can view this");
+
+    const staff = await prisma.user.findUnique({
+      where: { id: staffUserId },
+      select: { id: true, role: true, name: true, email: true, username: true, branch: { select: { id: true, name: true } }, createdAt: true },
+    });
+    if (!staff) throw new NotFoundError("User not found");
+    if (staff.role !== "BRANCH_ADMIN") throw new ValidationError("Attendance is only tracked for branch office logins");
+
+    const today = istStartOfDay(new Date());
+    const requestedTo = istStartOfDay(params.to ?? today);
+    const to = requestedTo > today ? today : requestedTo; // never count a future day as absent
+    const requestedFrom = istStartOfDay(params.from ?? istFirstOfMonth(to));
+    const accountStart = istStartOfDay(staff.createdAt);
+    const from = requestedFrom > accountStart ? requestedFrom : accountStart; // never look back before the login existed
+
+    const records = await prisma.staffAttendance.findMany({
+      where: { staffUserId, date: { gte: from, lte: to } },
+      orderBy: { date: "desc" },
+    });
+    const recordByDateKey = new Map(records.map((r) => [istDateKey(r.date), r]));
+
+    let daysPresent = 0;
+    let daysAbsent = 0;
+    if (from <= to) {
+      for (let cursor = from; cursor <= to; cursor = istNextDay(cursor)) {
+        if (recordByDateKey.get(istDateKey(cursor))?.loginAt) daysPresent += 1;
+        else daysAbsent += 1;
+      }
+    }
+
+    return {
+      staff: { id: staff.id, name: staff.name, email: staff.email, username: staff.username, branch: staff.branch },
+      period: { from, to },
+      daysPresent,
+      daysAbsent,
+      totalDays: daysPresent + daysAbsent,
+      records: records.map((r) => ({ date: r.date, loginAt: r.loginAt, logoutAt: r.logoutAt, status: r.status })),
+    };
   },
 };

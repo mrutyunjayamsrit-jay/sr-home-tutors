@@ -3,7 +3,7 @@ import { asyncHandler } from "@/common/utils/asyncHandler";
 import { ok } from "@/common/utils/apiResponse";
 import { ForbiddenError } from "@/common/errors/AppError";
 import { reportsService, reportCsv } from "./reports.service";
-import { reportQuerySchema, markTutorPaidSchema, detailQuerySchema } from "./reports.types";
+import { reportQuerySchema, markTutorPaidSchema, detailQuerySchema, profitLossQuerySchema, profitLossTrendQuerySchema } from "./reports.types";
 
 /** Branch Admins only ever see their own branch, regardless of what's in the query string. A tutor has no branch-wide view at all — see effectiveTutorId. */
 function effectiveBranchId(req: Request, requested: string | undefined) {
@@ -86,6 +86,22 @@ export const reportsController = {
     const branchId = effectiveBranchId(req, query.branchId);
     const result = await reportsService.parentEnquiryFees({ ...query, branchId, studentName: query.studentName });
     if (query.format === "csv") return sendCsv(res, "parent-enquiry-fees.csv", reportCsv.parentEnquiryFees(result.rows));
+    ok(res, result);
+  }),
+
+  // Org-wide profitability — Super Admin only (enforced here; the router
+  // otherwise allows BRANCH_ADMIN/TUTOR for the reports above).
+  profitLoss: asyncHandler(async (req, res) => {
+    if (req.user!.role !== "SUPER_ADMIN") throw new ForbiddenError("Not available outside Super Admin");
+    const query = profitLossQuerySchema.parse(req.query);
+    const result = await reportsService.profitLoss(query);
+    ok(res, result);
+  }),
+
+  profitLossTrend: asyncHandler(async (req, res) => {
+    if (req.user!.role !== "SUPER_ADMIN") throw new ForbiddenError("Not available outside Super Admin");
+    const query = profitLossTrendQuerySchema.parse(req.query);
+    const result = await reportsService.profitLossTrend(query);
     ok(res, result);
   }),
 

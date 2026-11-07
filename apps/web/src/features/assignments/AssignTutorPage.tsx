@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { Button, DataTable, Badge, toast } from "@/components/ui";
+import { Button, DataTable, Select, TextField, Badge, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { useAssignments, useRunningClasses, useUpdateAssignmentStatus } from "./api";
+import { useSubjects } from "@/features/master-data/api";
 import { CreateAssignmentDialog } from "./CreateAssignmentDialog";
 import type { Assignment, RunningClassRow } from "./types";
 import styles from "@/features/reports/ReportsPage.module.css";
@@ -16,15 +17,61 @@ const STATUS_TONE: Record<Assignment["status"], "success" | "warning" | "neutral
   ENDED: "neutral",
 };
 
+const STATUS_FILTER_OPTIONS = [
+  { value: "ACTIVE", label: "Active" },
+  { value: "PAUSED", label: "Paused" },
+  { value: "ENDED", label: "Ended" },
+];
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function AssignTutorPage() {
   const [tab, setTab] = useState<Tab>("assignments");
   const [createOpen, setCreateOpen] = useState(false);
 
-  const assignments = useAssignments({ page: 1, pageSize: 50 });
-  const running = useRunningClasses();
+  // Assignments-tab filters — mirror that table's own columns.
+  const [studentName, setStudentName] = useState("");
+  const [tutorName, setTutorName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [status, setStatus] = useState<"" | Assignment["status"]>("");
+  const [startFrom, setStartFrom] = useState("");
+  const [startTo, setStartTo] = useState("");
+
+  // Running Classes-tab filters.
+  const [runningStudentName, setRunningStudentName] = useState("");
+  const [runningTutorName, setRunningTutorName] = useState("");
+
+  const subjects = useSubjects();
+  const subjectFilterOptions = (subjects.data ?? []).map((s) => ({ value: s.name, label: s.name }));
+
+  const assignments = useAssignments({
+    page: 1,
+    pageSize: 50,
+    studentName: studentName || undefined,
+    tutorName: tutorName || undefined,
+    subject: subject || undefined,
+    status: status || undefined,
+    from: startFrom || undefined,
+    to: startTo || undefined,
+  });
+  const running = useRunningClasses({ studentName: runningStudentName || undefined, tutorName: runningTutorName || undefined });
   const updateStatus = useUpdateAssignmentStatus();
+
+  const hasActiveAssignmentFilters = Boolean(studentName || tutorName || subject || status || startFrom || startTo);
+  const handleClearAssignmentFilters = () => {
+    setStudentName("");
+    setTutorName("");
+    setSubject("");
+    setStatus("");
+    setStartFrom("");
+    setStartTo("");
+  };
+
+  const hasActiveRunningFilters = Boolean(runningStudentName || runningTutorName);
+  const handleClearRunningFilters = () => {
+    setRunningStudentName("");
+    setRunningTutorName("");
+  };
 
   const handleStatusChange = async (id: string, status: "ACTIVE" | "PAUSED" | "ENDED") => {
     try {
@@ -41,6 +88,7 @@ export function AssignTutorPage() {
     { key: "subjects", header: "Subjects", render: (a) => a.subjects.join(", ") },
     { key: "schedule", header: "Schedule", render: (a) => `${a.daysOfWeek.map((d) => DAY_LABELS[d]).join("/")} · ${a.timeSlotStart}–${a.timeSlotEnd}` },
     { key: "rate", header: "Rate/class", render: (a) => `₹${a.perClassRate}` },
+    { key: "startDate", header: "Class Start Date", render: (a) => new Date(a.startDate).toLocaleDateString() },
     { key: "status", header: "Status", render: (a) => <Badge tone={STATUS_TONE[a.status]}>{a.status}</Badge> },
     {
       key: "actions",
@@ -103,23 +151,71 @@ export function AssignTutorPage() {
 
         <div style={{ marginTop: "var(--space-4)" }}>
           {tab === "assignments" ? (
-            <DataTable
-              columns={assignmentColumns}
-              rows={assignments.data?.data ?? []}
-              rowKey={(a) => a.id}
-              isLoading={assignments.isLoading}
-              emptyTitle="No assignments yet"
-              emptyDescription="Assign a registered tutor to a registered student to get started."
-            />
+            <>
+              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                <div style={{ width: 180 }}>
+                  <TextField label="Student" placeholder="Search student" value={studentName} onChange={(e) => setStudentName(e.target.value)} />
+                </div>
+                <div style={{ width: 180 }}>
+                  <TextField label="Tutor" placeholder="Search tutor" value={tutorName} onChange={(e) => setTutorName(e.target.value)} />
+                </div>
+                <div style={{ width: 180 }}>
+                  <Select label="Subjects" placeholder="All" options={subjectFilterOptions} value={subject} onChange={(e) => setSubject(e.target.value)} />
+                </div>
+                <div style={{ width: 160 }}>
+                  <Select
+                    label="Status"
+                    placeholder="All"
+                    options={STATUS_FILTER_OPTIONS}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as "" | Assignment["status"])}
+                  />
+                </div>
+                <div style={{ width: 170 }}>
+                  <TextField label="Start date from" type="date" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} />
+                </div>
+                <div style={{ width: 170 }}>
+                  <TextField label="Start date to" type="date" value={startTo} onChange={(e) => setStartTo(e.target.value)} />
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-end" }}>
+                  <Button variant="ghost" onClick={handleClearAssignmentFilters} disabled={!hasActiveAssignmentFilters}>
+                    Clear all filters
+                  </Button>
+                </div>
+              </div>
+              <DataTable
+                columns={assignmentColumns}
+                rows={assignments.data?.data ?? []}
+                rowKey={(a) => a.id}
+                isLoading={assignments.isLoading}
+                emptyTitle="No assignments yet"
+                emptyDescription="Assign a registered tutor to a registered student to get started."
+              />
+            </>
           ) : (
-            <DataTable
-              columns={runningColumns}
-              rows={running.data ?? []}
-              rowKey={(r) => r.id}
-              isLoading={running.isLoading}
-              emptyTitle="No running classes yet"
-              emptyDescription="Once a tutor is assigned, their class schedule and attendance stats appear here."
-            />
+            <>
+              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                <div style={{ width: 180 }}>
+                  <TextField label="Student" placeholder="Search student" value={runningStudentName} onChange={(e) => setRunningStudentName(e.target.value)} />
+                </div>
+                <div style={{ width: 180 }}>
+                  <TextField label="Tutor" placeholder="Search tutor" value={runningTutorName} onChange={(e) => setRunningTutorName(e.target.value)} />
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-end" }}>
+                  <Button variant="ghost" onClick={handleClearRunningFilters} disabled={!hasActiveRunningFilters}>
+                    Clear all filters
+                  </Button>
+                </div>
+              </div>
+              <DataTable
+                columns={runningColumns}
+                rows={running.data ?? []}
+                rowKey={(r) => r.id}
+                isLoading={running.isLoading}
+                emptyTitle="No running classes yet"
+                emptyDescription="Once a tutor is assigned, their class schedule and attendance stats appear here."
+              />
+            </>
           )}
         </div>
       </div>

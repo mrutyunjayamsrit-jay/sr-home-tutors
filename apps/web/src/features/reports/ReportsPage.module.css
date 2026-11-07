@@ -31,7 +31,17 @@
   display: flex;
   align-items: flex-end;
   gap: var(--space-4);
-  flex-wrap: wrap;
+  /* All filters (and the Export button) stay on one row — wrapping onto a
+     second line left the row-two items visually misaligned against row
+     one, especially the right-pushed Export button. A horizontal scroll
+     on narrow viewports beats that. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.filters > * {
+  flex-shrink: 0;
 }
 
 .filterField {

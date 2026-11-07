@@ -3,7 +3,8 @@ import { ForbiddenError, NotFoundError } from "@/common/errors/AppError";
 import { reportsRepository } from "./reports.repository";
 import { toCsv } from "@/common/utils/csv";
 import { SHORT_CLASS_THRESHOLD_MINUTES } from "@/common/constants/attendance";
-import type { DetailQuery, MarkTutorPaidInput, ReportQuery } from "./reports.types";
+import { istFirstOfMonth, istEndOfDay, istDateKey } from "@/common/utils/istDate";
+import type { DetailQuery, MarkTutorPaidInput, ProfitLossQuery, ProfitLossTrendQuery, ReportQuery } from "./reports.types";
 
 interface Actor {
   role: string;
@@ -18,8 +19,8 @@ function periodKey(from: Date, to: Date) {
   return `${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
 }
 
-async function assignmentRows(query: Pick<ReportQuery, "from" | "to" | "branchId" | "tutorId" | "tutorName">) {
-  return reportsRepository.assignmentsInRange(query.from, query.to, query.branchId, query.tutorId, query.tutorName);
+async function assignmentRows(query: Pick<ReportQuery, "from" | "to" | "branchId" | "tutorId" | "tutorName" | "studentName">) {
+  return reportsRepository.assignmentsInRange(query.from, query.to, query.branchId, query.tutorId, query.tutorName, undefined, query.studentName);
 }
 
 export const reportsService = {
@@ -64,6 +65,7 @@ export const reportsService = {
     const assignments = await assignmentRows(query);
     const rows = assignments.map((a) => {
       const attended = a.sessions.filter((s) => s.status === "COMPLETED").length;
+      const absent = a.sessions.filter((s) => s.status === "ABSENT_STUDENT").length;
       const chapters = Array.from(new Set(a.sessions.map((s) => s.chaptersCovered).filter(Boolean))).join("; ");
       const workedMinutes = a.sessions
         .filter((s) => s.status === "COMPLETED")
@@ -74,6 +76,7 @@ export const reportsService = {
         tutorName: a.tutor.name,
         subjects: a.subjects.join(", "),
         classesAttended: attended,
+        classesAbsent: absent,
         chaptersCompleted: chapters,
         totalTimeSpentHours: hours(workedMinutes),
       };
@@ -126,7 +129,16 @@ export const reportsService = {
 
     const byTutor = new Map<
       string,
-      { tutorId: string; tutorName: string; fixedClasses: number; classesTaken: number; classesAbsent: number; workedMinutes: number; payableAmount: number }
+      {
+        tutorId: string;
+        tutorName: string;
+        fixedClasses: number;
+        classesTaken: number;
+        classesAbsent: number;
+        workedMinutes: number;
+        payableAmount: number;
+        fixedPay: number;
+      }
     >();
 
     for (const a of assignments) {
@@ -145,12 +157,19 @@ export const reportsService = {
         classesAbsent: 0,
         workedMinutes: 0,
         payableAmount: 0,
+        fixedPay: 0,
       };
       existing.fixedClasses += a.fixedClassesPerMonth;
       existing.classesTaken += classesTaken;
       existing.classesAbsent += classesAbsent;
       existing.workedMinutes += workedMinutes;
       existing.payableAmount += round2(classesTaken * rate);
+      // A flat monthly amount set on the assignment itself (see
+      // assignments.types.ts fixedSalary) — alongside, not instead of, the
+      // per-class payable above: some tutors are paid a fixed amount per
+      // assignment regardless of classes taken, on top of their per-class
+      // earnings on other assignments.
+      existing.fixedPay += a.fixedSalary != null ? Number(a.fixedSalary) : 0;
       byTutor.set(a.tutorId, existing);
     }
 
@@ -171,6 +190,7 @@ export const reportsService = {
           classesTaken: t.classesTaken,
           classesAbsent: t.classesAbsent,
           totalHoursTaught: hours(t.workedMinutes),
+          fixedPay: round2(t.fixedPay),
           payableAmount,
           paidAmount,
           outstandingAmount,
@@ -418,6 +438,78 @@ export const reportsService = {
     };
   },
 
+  /**
+   * Super Admin's "am I making money" number — revenue actually received
+   * from parents minus everything actually paid out (tutors + branch
+   * expenses, which covers office/branch staff salaries, rent, etc. —
+   * whatever's logged as an Expense). All three legs are cash-movement
+   * dates (paidAt / expenseDate), not invoice/payout creation dates, so a
+   * given month's figure reflects money that moved that month. Not a
+   * ledger with accrual/outstanding adjustments — see
+   * context/08-KNOWN-GAPS-AND-TODOS.md for that tradeoff.
+   */
+  async profitLoss(query: ProfitLossQuery) {
+    const [revenue, tutorPayouts, expenses] = await Promise.all([
+      reportsRepository.revenueInRange(query.from, query.to, query.branchId),
+      reportsRepository.tutorPayoutsInRange(query.from, query.to, query.branchId),
+      reportsRepository.expensesInRange(query.from, query.to, query.branchId),
+    ]);
+
+    const totalRevenue = round2(Number(revenue._sum.paidAmount ?? 0));
+    const totalTutorPayouts = round2(Number(tutorPayouts._sum.payableAmount ?? 0));
+    const totalExpenses = round2(Number(expenses._sum.amount ?? 0));
+    const netProfit = round2(totalRevenue - totalTutorPayouts - totalExpenses);
+
+    return {
+      totalRevenue,
+      totalTutorPayouts,
+      totalExpenses,
+      netProfit,
+      isProfit: netProfit >= 0,
+      period: { from: query.from, to: query.to },
+      generatedAt: new Date(),
+    };
+  },
+
+  /**
+   * One profit/loss point per of the last N IST calendar months (current
+   * month included, partial-to-date) — the P&L card above only ever shows
+   * one window at a time, so this is the trend Super Admin's dashboard
+   * chart needs to show whether that window is getting better or worse.
+   */
+  async profitLossTrend(query: ProfitLossTrendQuery) {
+    const now = new Date();
+    const months = Array.from({ length: query.months }, (_, i) => {
+      // Local month arithmetic is fine here — only the month/year index is
+      // used, then re-anchored to real IST day boundaries below.
+      const anchor = new Date(now.getFullYear(), now.getMonth() - (query.months - 1 - i), 1);
+      const from = istFirstOfMonth(anchor);
+      const nextMonthAnchor = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
+      const to = istEndOfDay(new Date(istFirstOfMonth(nextMonthAnchor).getTime() - 1));
+      return { key: istDateKey(from).slice(0, 7), from, to };
+    });
+
+    return Promise.all(
+      months.map(async (m) => {
+        const [revenue, tutorPayouts, expenses] = await Promise.all([
+          reportsRepository.revenueInRange(m.from, m.to, query.branchId),
+          reportsRepository.tutorPayoutsInRange(m.from, m.to, query.branchId),
+          reportsRepository.expensesInRange(m.from, m.to, query.branchId),
+        ]);
+        const totalRevenue = round2(Number(revenue._sum.paidAmount ?? 0));
+        const totalTutorPayouts = round2(Number(tutorPayouts._sum.payableAmount ?? 0));
+        const totalExpenses = round2(Number(expenses._sum.amount ?? 0));
+        return {
+          month: m.key,
+          totalRevenue,
+          totalTutorPayouts,
+          totalExpenses,
+          netProfit: round2(totalRevenue - totalTutorPayouts - totalExpenses),
+        };
+      }),
+    );
+  },
+
   /** PDF §5.3 "student fees report." */
   async studentFees(query: ReportQuery) {
     const invoices = await reportsRepository.studentFeeInvoices(query.from, query.to, query.branchId, query.studentName);
@@ -467,6 +559,7 @@ export const reportCsv = {
       { key: "tutorName", header: "Tutor" },
       { key: "subjects", header: "Subjects" },
       { key: "classesAttended", header: "Classes Attended" },
+      { key: "classesAbsent", header: "Classes Absent" },
       { key: "chaptersCompleted", header: "Chapters Completed" },
       { key: "totalTimeSpentHours", header: "Total Time Spent (hrs)" },
     ]),
@@ -488,6 +581,7 @@ export const reportCsv = {
       { key: "classesTaken", header: "Classes Taken" },
       { key: "classesAbsent", header: "Classes Absent" },
       { key: "totalHoursTaught", header: "Total Hours Taught" },
+      { key: "fixedPay", header: "Fixed Pay" },
       { key: "payableAmount", header: "Payable Amount" },
       { key: "paidAmount", header: "Paid Amount" },
       { key: "outstandingAmount", header: "Outstanding Amount" },

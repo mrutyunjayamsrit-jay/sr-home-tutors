@@ -20,3 +20,10 @@ export const listMineQuerySchema = z.object({
 export const overviewQuerySchema = z.object({
   date: z.coerce.date().optional(),
 });
+
+export const staffSummaryParamsSchema = z.object({ staffUserId: z.string().cuid() });
+
+export const staffSummaryQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});

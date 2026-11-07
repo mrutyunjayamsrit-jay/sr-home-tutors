@@ -12,6 +12,7 @@ export interface RegisteredTutor {
   status: "REGISTERED" | "ASSIGNED" | "ACTIVE" | "INACTIVE";
   branch: { id: string; name: string };
   _count: { assignments: number };
+  createdAt: string;
 }
 
 export interface RegisteredParent {
@@ -22,4 +23,5 @@ export interface RegisteredParent {
   status: "REGISTERED" | "ASSIGNED" | "ACTIVE" | "INACTIVE";
   branch: { id: string; name: string };
   students: { id: string; name: string; studentClass: string; board: string; status: string; preferredTutorGender: Gender | null }[];
+  createdAt: string;
 }

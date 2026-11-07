@@ -8,7 +8,7 @@ import { useSubjects, useAreas } from "@/features/master-data/api";
 import { useRateCards } from "@/features/fees/api";
 import { useAuthStore } from "@/features/auth/authStore";
 import { STUDENT_CATEGORY_OPTIONS, getClassOptions } from "@/lib/studentCategoryOptions";
-import { matchRateCard } from "@/lib/rateCardMatch";
+import { matchRateCard, rateCardPrice } from "@/lib/rateCardMatch";
 import type { AddressProofType, Board, Gender } from "./types";
 
 const BOARD_OPTIONS = [
@@ -30,6 +30,10 @@ const ADDRESS_PROOF_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const schema = z.object({
   studentName: z.string().min(2, "Required"),
   contactNumber: z.string().min(6, "Required"),
@@ -44,6 +48,7 @@ const schema = z.object({
   feesPrescribed: z.string().optional(),
   agreedFinalFees: z.string().optional(),
   parentQueries: z.string().optional(),
+  enquiryDate: z.string().min(1, "Required"),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -63,7 +68,7 @@ export function CreateParentEnquiryDialog({ open, onClose }: { open: boolean; on
     watch,
     setValue,
     formState: { errors, dirtyFields },
-  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { subjectsRequired: [] } });
+  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { subjectsRequired: [], enquiryDate: today() } });
 
   const selectedCategory = watch("category");
   const selectedClass = watch("studentClass");
@@ -77,7 +82,8 @@ export function CreateParentEnquiryDialog({ open, onClose }: { open: boolean; on
   useEffect(() => {
     if (!selectedBoard || !selectedClass || dirtyFields.feesPrescribed) return;
     const match = matchRateCard(rateCards.data ?? [], selectedBoard, selectedClass);
-    if (match) setValue("feesPrescribed", String(match.ratePerClass));
+    const price = match ? rateCardPrice(match) : null;
+    if (price != null) setValue("feesPrescribed", String(price));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBoard, selectedClass, rateCards.data]);
 
@@ -101,6 +107,7 @@ export function CreateParentEnquiryDialog({ open, onClose }: { open: boolean; on
         feesPrescribed: values.feesPrescribed ? Number(values.feesPrescribed) : undefined,
         agreedFinalFees: values.agreedFinalFees ? Number(values.agreedFinalFees) : undefined,
         parentQueries: values.parentQueries || undefined,
+        enquiryDate: values.enquiryDate,
       });
       toast.success(`Enquiry for ${values.studentName} added`);
       handleClose();
@@ -113,6 +120,13 @@ export function CreateParentEnquiryDialog({ open, onClose }: { open: boolean; on
     <Modal open={open} onClose={handleClose} title="New parent enquiry">
       <form onSubmit={handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: "16px" }} noValidate>
         <TextField label="Name of the student" error={errors.studentName?.message} {...register("studentName")} />
+        <TextField
+          label="Enquiry date"
+          type="date"
+          hint="Defaults to today — change it to back-enter an earlier enquiry"
+          error={errors.enquiryDate?.message}
+          {...register("enquiryDate")}
+        />
         <TextField label="Contact number" error={errors.contactNumber?.message} {...register("contactNumber")} />
         <Select
           label="Category"

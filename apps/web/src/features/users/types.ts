@@ -8,6 +8,8 @@ export interface UserListItem {
   username: string | null;
   status: "PENDING_ACTIVATION" | "ACTIVE" | "DISABLED";
   branch: { id: string; name: string; code: string } | null;
+  /** The Tutor/Student profile id (not this login's own id) — see reports.service.ts tutorDetail/studentDetail, which this keys off of. Null for roles without a profile (Super Admin, Branch Admin, Parent). */
+  profileId: string | null;
   lastLoginAt: string | null;
   createdAt: string;
 }

@@ -6,6 +6,7 @@ import { resolveInitialCredential } from "@/modules/auth/credential.util";
 import { generateUniqueUsername } from "@/modules/auth/username.util";
 import { hashPassword } from "@/modules/auth/password.util";
 import { logger } from "@/common/logger";
+import { istStartOfDay, istEndOfDay, istNextDay, istDateKey } from "@/common/utils/istDate";
 // import { sendBranchAdminInviteEmail } from "@/modules/notifications/email.service"; // wired once email module lands
 
 interface Actor {
@@ -37,6 +38,8 @@ export const branchService = {
           name: input.name,
           code: input.code,
           address: input.address,
+          latitude: input.latitude,
+          longitude: input.longitude,
           contactEmail: input.contactEmail,
           contactPhone: input.contactPhone,
         },
@@ -101,17 +104,19 @@ export const branchService = {
 
   /**
    * A Branch Admin editing their own branch's profile may only change the
-   * address — name/contact email/contact phone/active status are Super
-   * Admin decisions. Any of those fields sent by a Branch Admin are
-   * silently dropped rather than erroring, same convention as e.g.
-   * enquiries.service.ts ignoring a Branch Admin-supplied branchId — the
-   * request just does less than it asked for, instead of failing outright.
+   * address and coordinates — name/contact email/contact phone/active
+   * status are Super Admin decisions. Any of those fields sent by a Branch
+   * Admin are silently dropped rather than erroring, same convention as
+   * e.g. enquiries.service.ts ignoring a Branch Admin-supplied branchId —
+   * the request just does less than it asked for, instead of failing
+   * outright.
    */
   async update(branchId: string, input: UpdateBranchInput, actor: Actor) {
     const before = await branchRepository.findById(branchId);
     if (!before) throw new NotFoundError("Branch not found");
 
-    const effectiveInput: UpdateBranchInput = actor.role === "BRANCH_ADMIN" ? { address: input.address } : input;
+    const effectiveInput: UpdateBranchInput =
+      actor.role === "BRANCH_ADMIN" ? { address: input.address, latitude: input.latitude, longitude: input.longitude } : input;
 
     const updated = await branchRepository.update(branchId, effectiveInput);
 
@@ -230,12 +235,21 @@ export const branchService = {
    * Admin's per-branch view.
    */
   async getStats(branchId: string) {
-    const [pendingTutorEnquiries, pendingParentEnquiries, registeredTutors, registeredStudents, runningClasses] = await Promise.all([
+    const [pendingTutorEnquiries, pendingParentEnquiries, registeredTutors, registeredStudents, runningClasses, outstandingFees] = await Promise.all([
       prisma.tutorEnquiry.count({ where: { branchId, status: { in: ["NEW", "IN_REVIEW"] } } }),
       prisma.parentEnquiry.count({ where: { branchId, status: { in: ["NEW", "IN_REVIEW"] } } }),
       prisma.tutor.count({ where: { branchId } }),
       prisma.student.count({ where: { parent: { branchId } } }),
       prisma.assignment.count({ where: { branchId, status: "ACTIVE" } }),
+      // Currently outstanding, not scoped to any date range — unlike the
+      // Reports module's student-fees report (which is windowed by
+      // from/to), "how much is owed right now" is the actionable number
+      // for a dashboard tile.
+      prisma.studentFeeInvoice.aggregate({
+        where: { status: { in: ["PENDING", "PARTIAL", "OVERDUE"] }, student: { parent: { branchId } } },
+        _sum: { balance: true },
+        _count: { _all: true },
+      }),
     ]);
 
     return {
@@ -245,6 +259,50 @@ export const branchService = {
       registeredTutors,
       registeredStudents,
       runningClasses,
+      outstandingFeesAmount: Math.round((Number(outstandingFees._sum.balance) || 0) * 100) / 100,
+      outstandingInvoiceCount: outstandingFees._count._all,
     };
+  },
+
+  /**
+   * Last 5 IST calendar days' "present" counts for the branch dashboard's
+   * attendance trend chart — a distinct-tutor and distinct-student count
+   * per day (a tutor/student teaching or attending more than one class
+   * that day still only counts once), computed live from ClassSession so
+   * it can never drift from Class Attendance's own COMPLETED marking.
+   */
+  async getAttendanceTrend(branchId: string) {
+    const DAYS = 5;
+    const to = istEndOfDay(new Date());
+    const from = istStartOfDay(new Date(to.getTime() - (DAYS - 1) * 24 * 60 * 60 * 1000));
+
+    const sessions = await prisma.classSession.findMany({
+      where: {
+        status: "COMPLETED",
+        scheduledDate: { gte: from, lte: to },
+        assignment: { branchId },
+      },
+      select: { scheduledDate: true, assignment: { select: { tutorId: true, studentId: true } } },
+    });
+
+    const byDate = new Map<string, { tutors: Set<string>; students: Set<string> }>();
+    let cursor = from;
+    for (let i = 0; i < DAYS; i++) {
+      byDate.set(istDateKey(cursor), { tutors: new Set(), students: new Set() });
+      cursor = istNextDay(cursor);
+    }
+
+    for (const s of sessions) {
+      const bucket = byDate.get(istDateKey(s.scheduledDate));
+      if (!bucket) continue;
+      bucket.tutors.add(s.assignment.tutorId);
+      bucket.students.add(s.assignment.studentId);
+    }
+
+    return Array.from(byDate.entries()).map(([date, b]) => ({
+      date,
+      tutorsPresent: b.tutors.size,
+      studentsPresent: b.students.size,
+    }));
   },
 };

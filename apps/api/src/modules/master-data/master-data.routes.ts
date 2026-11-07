@@ -7,6 +7,7 @@ import {
   areaIdParamSchema,
   createAreaSchema,
   createSubjectSchema,
+  geocodeAreaQuerySchema,
   listAreasQuerySchema,
   subjectIdParamSchema,
 } from "./master-data.types";
@@ -28,3 +29,5 @@ masterDataRouter.delete("/subjects/:subjectId", writeAccess, validate({ params: 
 masterDataRouter.get("/areas", readAccess, validate({ query: listAreasQuerySchema }), masterDataController.listAreas);
 masterDataRouter.post("/areas", writeAccess, validate({ body: createAreaSchema }), masterDataController.createArea);
 masterDataRouter.delete("/areas/:areaId", writeAccess, validate({ params: areaIdParamSchema }), masterDataController.deleteArea);
+// Looking up coordinates from an area name is part of adding one — same access as creating/removing an area.
+masterDataRouter.get("/areas/geocode", writeAccess, validate({ query: geocodeAreaQuerySchema }), masterDataController.geocodeArea);

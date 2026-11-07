@@ -24,6 +24,9 @@ const invoiceReadAccess = authorize("SUPER_ADMIN", "BRANCH_ADMIN", "PARENT");
 // Pricing is a Super Admin decision — a Branch Admin can still read the
 // rates (needed when raising an invoice) but can no longer add/remove them.
 const rateCardWriteAccess = authorize("SUPER_ADMIN");
+// Approving a recorded payment is Super Admin's own role on an invoice —
+// the branch office is the one that records the payment/proof.
+const approveAccess = authorize("SUPER_ADMIN");
 
 feesRouter.get("/rate-cards", officeAccess, validate({ query: listRateCardsQuerySchema }), feesController.listRateCards);
 feesRouter.post("/rate-cards", rateCardWriteAccess, validate({ body: createRateCardSchema }), feesController.createRateCard);
@@ -36,4 +39,10 @@ feesRouter.post(
   officeAccess,
   validate({ params: invoiceIdParamSchema, body: recordPaymentSchema }),
   feesController.recordPayment,
+);
+feesRouter.post(
+  "/invoices/:invoiceId/approve",
+  approveAccess,
+  validate({ params: invoiceIdParamSchema }),
+  feesController.approveInvoice,
 );

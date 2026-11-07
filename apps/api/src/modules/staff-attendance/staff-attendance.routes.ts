@@ -3,7 +3,13 @@ import { staffAttendanceController } from "./staff-attendance.controller";
 import { authenticate } from "@/middleware/authenticate";
 import { authorize } from "@/middleware/authorize";
 import { validate } from "@/middleware/validate";
-import { checkTimeSchema, listMineQuerySchema, overviewQuerySchema } from "./staff-attendance.types";
+import {
+  checkTimeSchema,
+  listMineQuerySchema,
+  overviewQuerySchema,
+  staffSummaryParamsSchema,
+  staffSummaryQuerySchema,
+} from "./staff-attendance.types";
 
 export const staffAttendanceRouter = Router();
 
@@ -24,4 +30,12 @@ staffAttendanceRouter.get(
   authorize("SUPER_ADMIN"),
   validate({ query: overviewQuerySchema }),
   staffAttendanceController.overview,
+);
+
+// Users & Roles → click a branch office row (enforced again in the service).
+staffAttendanceRouter.get(
+  "/:staffUserId/summary",
+  authorize("SUPER_ADMIN"),
+  validate({ params: staffSummaryParamsSchema, query: staffSummaryQuerySchema }),
+  staffAttendanceController.summaryForUser,
 );

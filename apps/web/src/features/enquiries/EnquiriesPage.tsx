@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppShell } from "@/app/AppShell";
 import { BRANCH_NAV } from "@/app/navConfig";
-import { Button, DataTable, TextField, Badge, toast } from "@/components/ui";
+import { Button, DataTable, TextField, Select, Badge, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import {
   useTutorEnquiries,
@@ -11,6 +11,7 @@ import {
   useConvertTutorEnquiry,
   useConvertParentEnquiry,
 } from "./api";
+import { useSubjects } from "@/features/master-data/api";
 import { CreateTutorEnquiryDialog } from "./CreateTutorEnquiryDialog";
 import { CreateParentEnquiryDialog } from "./CreateParentEnquiryDialog";
 import { ConvertEnquiryDialog } from "./ConvertEnquiryDialog";
@@ -24,6 +25,22 @@ const GENDER_LABEL: Record<string, string> = {
   FEMALE: "Female",
   OTHER: "Other",
 };
+
+const GENDER_FILTER_OPTIONS = [
+  { value: "MALE", label: "Male" },
+  { value: "FEMALE", label: "Female" },
+  { value: "OTHER", label: "Other" },
+];
+const SOURCE_FILTER_OPTIONS = [
+  { value: "WEBSITE", label: "Website" },
+  { value: "STAFF", label: "Staff" },
+];
+const STATUS_FILTER_OPTIONS = [
+  { value: "NEW", label: "New" },
+  { value: "IN_REVIEW", label: "In review" },
+  { value: "ACCEPTED", label: "Accepted" },
+  { value: "REJECTED", label: "Rejected" },
+];
 
 export function EnquiriesPage() {
   const [tab, setTab] = useState<Tab>("tutors");
@@ -40,8 +57,52 @@ export function EnquiriesPage() {
     agreedFinalFees?: number | null;
   } | null>(null);
 
-  const tutors = useTutorEnquiries({ page: 1, pageSize: 50, search: search || undefined });
-  const parents = useParentEnquiries({ page: 1, pageSize: 50, search: search || undefined });
+  // Tutor-tab filters — mirror the Tutor Enquiries table's own columns.
+  const [gender, setGender] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [education, setEducation] = useState("");
+  const [subject, setSubject] = useState("");
+  const [source, setSource] = useState<"" | "WEBSITE" | "STAFF">("");
+  const [status, setStatus] = useState<"" | EnquiryStatus>("");
+  const [enquiryFrom, setEnquiryFrom] = useState("");
+  const [enquiryTo, setEnquiryTo] = useState("");
+
+  const subjects = useSubjects();
+  const subjectFilterOptions = (subjects.data ?? []).map((s) => ({ value: s.name, label: s.name }));
+
+  const hasActiveFilters = Boolean(search || gender || contactNumber || education || subject || source || status || enquiryFrom || enquiryTo);
+  const handleClearFilters = () => {
+    setSearch("");
+    setGender("");
+    setContactNumber("");
+    setEducation("");
+    setSubject("");
+    setSource("");
+    setStatus("");
+    setEnquiryFrom("");
+    setEnquiryTo("");
+  };
+
+  const tutors = useTutorEnquiries({
+    page: 1,
+    pageSize: 50,
+    search: search || undefined,
+    gender: gender || undefined,
+    contactNumber: contactNumber || undefined,
+    education: education || undefined,
+    subject: subject || undefined,
+    source: source || undefined,
+    status: status || undefined,
+    from: enquiryFrom || undefined,
+    to: enquiryTo || undefined,
+  });
+  const parents = useParentEnquiries({
+    page: 1,
+    pageSize: 50,
+    search: search || undefined,
+    from: enquiryFrom || undefined,
+    to: enquiryTo || undefined,
+  });
   const updateTutorStatus = useUpdateTutorEnquiryStatus();
   const updateParentStatus = useUpdateParentEnquiryStatus();
   const convertTutor = useConvertTutorEnquiry();
@@ -67,6 +128,7 @@ export function EnquiriesPage() {
       header: "Source",
       render: (e) => (e.createdById === "PUBLIC_WEBSITE" ? <Badge tone="info">Website</Badge> : <span style={{ color: "var(--text-tertiary)" }}>Staff</span>),
     },
+    { key: "enquiryDate", header: "Enquiry Date", render: (e) => new Date(e.enquiryDate).toLocaleDateString() },
     {
       key: "status",
       header: "Status",
@@ -117,6 +179,7 @@ export function EnquiriesPage() {
       header: "Source",
       render: (e) => (e.createdById === "PUBLIC_WEBSITE" ? <Badge tone="info">Website</Badge> : <span style={{ color: "var(--text-tertiary)" }}>Staff</span>),
     },
+    { key: "enquiryDate", header: "Enquiry Date", render: (e) => new Date(e.enquiryDate).toLocaleDateString() },
     {
       key: "status",
       header: "Status",
@@ -187,6 +250,48 @@ export function EnquiriesPage() {
 
         <div style={{ margin: "var(--space-4) 0", maxWidth: 320 }}>
           <TextField label="Search" placeholder="Search by name or contact" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+          {tab === "tutors" && (
+            <>
+              <div style={{ width: 160 }}>
+                <Select label="Gender" placeholder="All" options={GENDER_FILTER_OPTIONS} value={gender} onChange={(e) => setGender(e.target.value)} />
+              </div>
+              <div style={{ width: 180 }}>
+                <TextField label="Contact" placeholder="Search contact" value={contactNumber} onChange={(e) => setContactNumber(e.target.value)} />
+              </div>
+              <div style={{ width: 180 }}>
+                <TextField label="Education" placeholder="Search education" value={education} onChange={(e) => setEducation(e.target.value)} />
+              </div>
+              <div style={{ width: 180 }}>
+                <Select label="Subjects" placeholder="All" options={subjectFilterOptions} value={subject} onChange={(e) => setSubject(e.target.value)} />
+              </div>
+              <div style={{ width: 160 }}>
+                <Select label="Source" placeholder="All" options={SOURCE_FILTER_OPTIONS} value={source} onChange={(e) => setSource(e.target.value as "" | "WEBSITE" | "STAFF")} />
+              </div>
+              <div style={{ width: 160 }}>
+                <Select
+                  label="Status"
+                  placeholder="All"
+                  options={STATUS_FILTER_OPTIONS}
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as "" | EnquiryStatus)}
+                />
+              </div>
+            </>
+          )}
+          <div style={{ width: 170 }}>
+            <TextField label="Enquiry date from" type="date" value={enquiryFrom} onChange={(e) => setEnquiryFrom(e.target.value)} />
+          </div>
+          <div style={{ width: 170 }}>
+            <TextField label="Enquiry date to" type="date" value={enquiryTo} onChange={(e) => setEnquiryTo(e.target.value)} />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <Button variant="ghost" onClick={handleClearFilters} disabled={!hasActiveFilters}>
+              Clear all filters
+            </Button>
+          </div>
         </div>
 
         {tab === "tutors" ? (

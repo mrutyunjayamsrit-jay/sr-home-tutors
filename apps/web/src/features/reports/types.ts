@@ -19,6 +19,7 @@ export interface StudentAttendanceRow {
   tutorName: string;
   subjects: string;
   classesAttended: number;
+  classesAbsent: number;
   chaptersCompleted: string;
   totalTimeSpentHours: number;
 }
@@ -43,6 +44,8 @@ export interface TutorPaymentSummaryRow {
   classesTaken: number;
   classesAbsent: number;
   totalHoursTaught: number;
+  /** A flat monthly amount set on the assignment itself (Assignment.fixedSalary) — alongside, not instead of, the per-class payableAmount. */
+  fixedPay: number;
   payableAmount: number;
   paidAmount: number;
   outstandingAmount: number;

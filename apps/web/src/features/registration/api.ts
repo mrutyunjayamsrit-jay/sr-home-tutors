@@ -7,6 +7,14 @@ interface ListParams {
   pageSize?: number;
   search?: string;
   status?: "REGISTERED" | "ASSIGNED" | "ACTIVE" | "INACTIVE" | "ALL";
+  /** Tutor-list filters only — ignored server-side by the parent listing. */
+  gender?: string;
+  education?: string;
+  subject?: string;
+  contactNumber?: string;
+  /** Range filter on createdAt (registration date), shared by both listings. */
+  from?: string;
+  to?: string;
 }
 
 function qs(params: ListParams) {

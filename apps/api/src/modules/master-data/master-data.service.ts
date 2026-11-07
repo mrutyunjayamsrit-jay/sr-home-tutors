@@ -1,5 +1,7 @@
 import { prisma } from "@/common/prisma";
 import { ConflictError, NotFoundError } from "@/common/errors/AppError";
+import { haversineDistanceMeters } from "@/common/utils/geo";
+import { geocodeAreaInKarnataka } from "@/common/utils/geocode";
 import type { CreateAreaInput, CreateSubjectInput } from "./master-data.types";
 
 interface Actor {
@@ -38,28 +40,53 @@ export const masterDataService = {
   },
 
   // ── Areas ───────────────────────────────────────────────────────────
-  /** A Branch Admin/Tutor/Parent without an explicit branchId sees only their own branch's areas; Super Admin with no filter sees every branch's. */
-  listAreas(params: { branchId?: string }, actor: Actor) {
+  /**
+   * A Branch Admin/Tutor/Parent without an explicit branchId sees only
+   * their own branch's areas; Super Admin with no filter sees every
+   * branch's. Each row also gets `distanceKm` — the great-circle distance
+   * from the area to its own branch — computed live from both sides'
+   * latitude/longitude whenever both are set, and `null` otherwise (never
+   * a guessed number; see common/utils/geo.ts).
+   */
+  async listAreas(params: { branchId?: string; search?: string }, actor: Actor) {
     const branchId =
       actor.role === "BRANCH_ADMIN" || actor.role === "TUTOR" || actor.role === "PARENT"
         ? actor.branchId ?? undefined
         : params.branchId;
-    return prisma.area.findMany({
-      where: branchId ? { branchId } : undefined,
-      include: { branch: { select: { id: true, name: true } } },
+    const areas = await prisma.area.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        ...(params.search ? { name: { contains: params.search, mode: "insensitive" } } : {}),
+      },
+      include: { branch: { select: { id: true, name: true, latitude: true, longitude: true } } },
       orderBy: [{ branch: { name: "asc" } }, { name: "asc" }],
     });
+
+    return areas.map((a) => ({
+      ...a,
+      distanceKm:
+        a.latitude != null && a.longitude != null && a.branch.latitude != null && a.branch.longitude != null
+          ? Math.round((haversineDistanceMeters(a.branch.latitude, a.branch.longitude, a.latitude, a.longitude) / 1000) * 10) / 10
+          : null,
+    }));
   },
 
   async createArea(input: CreateAreaInput) {
     const existing = await prisma.area.findUnique({ where: { branchId_name: { branchId: input.branchId, name: input.name } } });
     if (existing) throw new ConflictError(`"${input.name}" is already in this branch's areas list`);
-    return prisma.area.create({ data: { branchId: input.branchId, name: input.name } });
+    return prisma.area.create({
+      data: { branchId: input.branchId, name: input.name, latitude: input.latitude, longitude: input.longitude },
+    });
   },
 
   async deleteArea(id: string) {
     const area = await prisma.area.findUnique({ where: { id } });
     if (!area) throw new NotFoundError("Area not found");
     await prisma.area.delete({ where: { id } });
+  },
+
+  /** Looks up an area name's coordinates, restricted to Karnataka — see common/utils/geocode.ts. Null means no confident Karnataka match, not an error. */
+  async geocodeArea(name: string) {
+    return geocodeAreaInKarnataka(name);
   },
 };

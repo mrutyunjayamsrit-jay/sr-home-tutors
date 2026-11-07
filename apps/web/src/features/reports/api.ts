@@ -125,6 +125,45 @@ export function useStudentDetail(studentId: string | null, filters: Pick<ReportF
   });
 }
 
+export interface ProfitLoss {
+  totalRevenue: number;
+  totalTutorPayouts: number;
+  totalExpenses: number;
+  netProfit: number;
+  isProfit: boolean;
+  period: { from: string; to: string };
+}
+
+/** Super Admin's org-wide (or single-branch, via filters.branchId) profit/loss window — see reports.service.ts's profitLoss. */
+export function useProfitLoss(filters: Pick<ReportFilters, "from" | "to" | "branchId">, enabled: boolean) {
+  return useQuery({
+    queryKey: ["reports", "profit-loss", filters],
+    queryFn: () => api.get<ProfitLoss>(`/reports/profit-loss?${qs(filters)}`),
+    enabled,
+  });
+}
+
+export interface ProfitLossTrendPoint {
+  /** "YYYY-MM" */
+  month: string;
+  totalRevenue: number;
+  totalTutorPayouts: number;
+  totalExpenses: number;
+  netProfit: number;
+}
+
+/** One point per of the last N IST months — see reports.service.ts's profitLossTrend. Super Admin's dashboard trend chart. */
+export function useProfitLossTrend(params: { branchId?: string; months?: number } = {}, enabled = true) {
+  const q = new URLSearchParams();
+  if (params.branchId) q.set("branchId", params.branchId);
+  if (params.months) q.set("months", String(params.months));
+  return useQuery({
+    queryKey: ["reports", "profit-loss-trend", params],
+    queryFn: () => api.get<ProfitLossTrendPoint[]>(`/reports/profit-loss-trend?${q.toString()}`),
+    enabled,
+  });
+}
+
 export function downloadReportCsv(
   kind: "attendance/tutors" | "attendance/students" | "payments/tutors" | "payments/tutors/summary" | "fees/students" | "fees/enquiries",
   filters: ReportFilters,

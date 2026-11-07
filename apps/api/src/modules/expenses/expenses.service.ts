@@ -34,7 +34,15 @@ export const expensesService = {
   },
 
   async list(
-    params: { page: number; pageSize: number; branchId?: string; category?: string; from?: Date; to?: Date },
+    params: {
+      page: number;
+      pageSize: number;
+      branchId?: string;
+      category?: string;
+      from?: Date;
+      to?: Date;
+      approvalStatus?: "APPROVED" | "PENDING";
+    },
     actor: Actor,
   ) {
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
@@ -44,6 +52,7 @@ export const expensesService = {
       ...(params.from || params.to
         ? { expenseDate: { ...(params.from ? { gte: params.from } : {}), ...(params.to ? { lte: params.to } : {}) } }
         : {}),
+      ...(params.approvalStatus ? { approvedAt: params.approvalStatus === "APPROVED" ? { not: null } : null } : {}),
     };
     const [items, total, sumResult] = await Promise.all([
       prisma.expense.findMany({
@@ -82,5 +91,15 @@ export const expensesService = {
       throw new ForbiddenError("You don't have access to this branch's data");
     }
     await prisma.expense.delete({ where: { id } });
+  },
+
+  /** Super Admin's sign-off on a branch-raised expense — see expenses.routes.ts approveAccess. */
+  async approve(id: string, actor: Actor) {
+    const expense = await prisma.expense.findUnique({ where: { id } });
+    if (!expense) throw new NotFoundError("Expense not found");
+    return prisma.expense.update({
+      where: { id },
+      data: { approvedAt: new Date(), approvedById: actor.id },
+    });
   },
 };
