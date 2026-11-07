@@ -21,6 +21,7 @@ import { notificationsRouter } from "@/modules/notifications/notifications.route
 import { masterDataRouter } from "@/modules/master-data/master-data.routes";
 import { tasksRouter } from "@/modules/tasks/tasks.routes";
 import { parentQueriesRouter } from "@/modules/parent-queries/parent-queries.routes";
+import { ratingsRouter } from "@/modules/ratings/ratings.routes";
 
 export const apiRouter = Router();
 
@@ -46,6 +47,7 @@ apiRouter.use("/notifications", notificationsRouter);
 apiRouter.use("/master-data", masterDataRouter);
 apiRouter.use("/tasks", tasksRouter);
 apiRouter.use("/parent-queries", parentQueriesRouter);
+apiRouter.use("/ratings", ratingsRouter);
 
 // Remaining planned modules (payroll finalization) are wired here as each
 // is built — see docs/ARCHITECTURE.md §6.

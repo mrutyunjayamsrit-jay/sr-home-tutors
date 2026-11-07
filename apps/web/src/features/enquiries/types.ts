@@ -22,6 +22,8 @@ export interface TutorEnquiry {
   notes: string | null;
   createdById: string;
   enquiryDate: string;
+  /** Office's own 1-5 interview assessment — carried over to the registered Tutor on conversion. */
+  interviewRating: number | null;
   createdAt: string;
   tutor: { id: string } | null;
 }
@@ -63,6 +65,7 @@ export interface CreateTutorEnquiryInput {
   areasInterested: string[];
   notes?: string;
   enquiryDate?: string;
+  interviewRating?: number;
 }
 
 export interface CreateParentEnquiryInput {

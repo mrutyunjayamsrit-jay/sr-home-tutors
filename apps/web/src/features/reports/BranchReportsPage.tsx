@@ -15,6 +15,7 @@ import {
   type StudentFeesSummary,
 } from "./api";
 import { MarkTutorPaidDialog } from "./MarkTutorPaidDialog";
+import { TutorDetailDialog } from "./TutorDetailDialog";
 import type { StudentAttendanceRow, StudentFeeRow, TutorAttendanceRow, TutorPaymentSummaryRow } from "./types";
 import styles from "./ReportsPage.module.css";
 
@@ -70,6 +71,7 @@ export function BranchReportsPage() {
   const [periodFilter, setPeriodFilter] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [payTutor, setPayTutor] = useState<TutorPaymentSummaryRow | null>(null);
+  const [detailTutorId, setDetailTutorId] = useState<string | null>(null);
 
   const filters: ReportFilters = { from, to, tutorName: tutorName || undefined, studentName: studentName || undefined };
   const rangeValid = Boolean(from && to && from <= to);
@@ -208,7 +210,9 @@ export function BranchReportsPage() {
 
         {!rangeValid && <p style={{ color: "var(--color-danger-500)" }}>"From" date must be on or before "To" date.</p>}
 
-        {tab === "tutorAttendance" && <TutorAttendanceTable data={tutorAttendanceRows} isLoading={tutorAttendance.isLoading} />}
+        {tab === "tutorAttendance" && (
+          <TutorAttendanceTable data={tutorAttendanceRows} isLoading={tutorAttendance.isLoading} onDetail={setDetailTutorId} />
+        )}
         {tab === "studentAttendance" && <StudentAttendanceTable data={studentAttendanceRows} isLoading={studentAttendance.isLoading} />}
         {tab === "tutorPayments" && (
           <TutorPaymentsTable
@@ -216,6 +220,7 @@ export function BranchReportsPage() {
             summary={tutorPayments.data?.summary}
             isLoading={tutorPayments.isLoading}
             onMarkPaid={setPayTutor}
+            onDetail={setDetailTutorId}
           />
         )}
         {tab === "studentFees" && (
@@ -224,6 +229,7 @@ export function BranchReportsPage() {
       </div>
 
       <MarkTutorPaidDialog tutor={payTutor} from={from} to={to} onClose={() => setPayTutor(null)} />
+      <TutorDetailDialog tutorId={detailTutorId} filters={{ from, to }} onClose={() => setDetailTutorId(null)} />
     </AppShell>
   );
 }
@@ -231,9 +237,17 @@ export function BranchReportsPage() {
 const EMPTY_TITLE = "No data for this period yet";
 const EMPTY_DESC = "This fills in automatically as classes are scheduled and marked.";
 
-function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]; isLoading: boolean }) {
+function TutorAttendanceTable({
+  data,
+  isLoading,
+  onDetail,
+}: {
+  data?: TutorAttendanceRow[];
+  isLoading: boolean;
+  onDetail: (tutorId: string) => void;
+}) {
   const columns: Column<TutorAttendanceRow>[] = [
-    { key: "tutorName", header: "Tutor", render: (r) => r.tutorName },
+    { key: "tutorName", header: "Tutor", render: (r) => <strong style={{ color: "var(--color-primary-600)" }}>{r.tutorName}</strong> },
     { key: "studentName", header: "Student", render: (r) => `${r.studentName} (${r.studentClass})` },
     { key: "fixedClasses", header: "Fixed Classes", render: (r) => r.fixedClasses },
     { key: "fixedFees", header: "Fixed Fee/Class", render: (r) => `₹${r.fixedFees}` },
@@ -245,7 +259,7 @@ function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]
       header: "Short Classes",
       render: (r) =>
         r.shortClasses > 0 ? (
-          <strong style={{ color: "var(--color-danger-500)" }} title={`${r.shortClasses} class(es) under 40 minutes`}>
+          <strong style={{ color: "var(--color-danger-500)" }} title={`${r.shortClasses} class(es) under their scheduled duration`}>
             {r.shortClasses} ⚠
           </strong>
         ) : (
@@ -253,7 +267,17 @@ function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]
         ),
     },
   ];
-  return <DataTable columns={columns} rows={data ?? []} rowKey={(r) => r.assignmentId} isLoading={isLoading} emptyTitle={EMPTY_TITLE} emptyDescription={EMPTY_DESC} />;
+  return (
+    <DataTable
+      columns={columns}
+      rows={data ?? []}
+      rowKey={(r) => r.assignmentId}
+      isLoading={isLoading}
+      emptyTitle={EMPTY_TITLE}
+      emptyDescription={EMPTY_DESC}
+      onRowClick={(r) => onDetail(r.tutorId)}
+    />
+  );
 }
 
 function StudentAttendanceTable({ data, isLoading }: { data?: StudentAttendanceRow[]; isLoading: boolean }) {
@@ -281,14 +305,16 @@ function TutorPaymentsTable({
   summary,
   isLoading,
   onMarkPaid,
+  onDetail,
 }: {
   data?: TutorPaymentSummaryRow[];
   summary?: TutorPaymentsSummaryTotals;
   isLoading: boolean;
   onMarkPaid: (row: TutorPaymentSummaryRow) => void;
+  onDetail: (tutorId: string) => void;
 }) {
   const columns: Column<TutorPaymentSummaryRow>[] = [
-    { key: "tutorName", header: "Tutor", render: (r) => <strong>{r.tutorName}</strong> },
+    { key: "tutorName", header: "Tutor", render: (r) => <strong style={{ color: "var(--color-primary-600)" }}>{r.tutorName}</strong> },
     { key: "fixedClasses", header: "Fixed Classes", render: (r) => r.fixedClasses },
     { key: "classesTaken", header: "Classes Taken", render: (r) => r.classesTaken },
     { key: "classesAbsent", header: "Classes Absent", render: (r) => r.classesAbsent },
@@ -329,7 +355,15 @@ function TutorPaymentsTable({
           </strong>
         </p>
       )}
-      <DataTable columns={columns} rows={data ?? []} rowKey={(r) => r.tutorId} isLoading={isLoading} emptyTitle={EMPTY_TITLE} emptyDescription={EMPTY_DESC} />
+      <DataTable
+        columns={columns}
+        rows={data ?? []}
+        rowKey={(r) => r.tutorId}
+        isLoading={isLoading}
+        emptyTitle={EMPTY_TITLE}
+        emptyDescription={EMPTY_DESC}
+        onRowClick={(r) => onDetail(r.tutorId)}
+      />
     </>
   );
 }

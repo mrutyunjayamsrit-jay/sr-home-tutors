@@ -2,6 +2,7 @@ import { prisma } from "@/common/prisma";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/common/errors/AppError";
 import { MIN_CHECKOUT_GAP_MINUTES } from "@/common/constants/attendance";
 import { istStartOfDay, istEndOfDay, istFirstOfMonth, istNextDay, istDateKey } from "@/common/utils/istDate";
+import { ensureAttendanceClosed } from "@/jobs/attendanceClosing";
 import type { CheckTimeInput } from "./staff-attendance.types";
 
 interface Actor {
@@ -64,6 +65,7 @@ export const staffAttendanceService = {
 
   /** Own history — lets a branch admin see (and spot gaps in) their own recent record, defaulting to the current month. */
   async listMine(params: { from?: Date; to?: Date }, actor: Actor) {
+    await ensureAttendanceClosed();
     const to = params.to ?? new Date();
     const from = params.from ?? istFirstOfMonth(to);
     return prisma.staffAttendance.findMany({
@@ -79,6 +81,7 @@ export const staffAttendanceService = {
    */
   async overview(params: { date?: Date }, actor: Actor) {
     if (actor.role !== "SUPER_ADMIN") throw new ForbiddenError("Only Super Admin can view this");
+    await ensureAttendanceClosed();
     const date = istStartOfDay(params.date ?? new Date());
 
     const branches = await prisma.branch.findMany({
@@ -122,14 +125,15 @@ export const staffAttendanceService = {
    * Super Admin's "how reliable is this branch office" drill-down (Users &
    * Roles → click a branch office row) — real present/absent day counts
    * for one staff login over a date range, defaulting to the current
-   * month. "Absent" here means "a calendar day in range with no check-in
-   * on record", the same definition ensureBranchMissedEscalations uses —
-   * there's no separate flow that ever writes an explicit ABSENT/HALF_DAY/
-   * LEAVE row today (see schema.prisma StaffAttendanceStatus), so it has
-   * to be derived from missing rows rather than read off a status column.
+   * month. "Absent" means "a calendar day in range with no check-in on
+   * record" — a real ABSENT row now gets backfilled for every past day a
+   * Branch Admin never checked in (see src/jobs/attendanceClosing.ts), but
+   * this still keys off `loginAt` rather than `status` so it stays correct
+   * even for days from before that backfill existed.
    */
   async summaryForUser(staffUserId: string, params: { from?: Date; to?: Date }, actor: Actor) {
     if (actor.role !== "SUPER_ADMIN") throw new ForbiddenError("Only Super Admin can view this");
+    await ensureAttendanceClosed();
 
     const staff = await prisma.user.findUnique({
       where: { id: staffUserId },

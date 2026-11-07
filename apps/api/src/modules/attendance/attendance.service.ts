@@ -6,6 +6,7 @@ import { haversineDistanceMeters } from "@/common/utils/geo";
 import { areaLooksLikeMatch } from "@/common/utils/textMatch";
 import { MIN_CHECKOUT_GAP_MINUTES } from "@/common/constants/attendance";
 import { istStartOfDay, istEndOfDay } from "@/common/utils/istDate";
+import { ensureAttendanceClosed } from "@/jobs/attendanceClosing";
 import type { LocationCoordsInput, ManualAreaInput, MarkSessionInput } from "./attendance.types";
 import type { Prisma } from "@prisma/client";
 
@@ -133,6 +134,7 @@ export const attendanceService = {
     params: { date?: Date; from?: Date; to?: Date; branchId?: string; assignmentId?: string; status?: string; studentId?: string },
     actor: Actor,
   ) {
+    await ensureAttendanceClosed();
     const branchId = actor.role === "BRANCH_ADMIN" ? actor.branchId ?? undefined : params.branchId;
     const range = params.date
       ? { gte: istStartOfDay(params.date), lte: istEndOfDay(params.date) }

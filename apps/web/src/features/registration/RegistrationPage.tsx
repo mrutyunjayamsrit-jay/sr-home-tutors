@@ -96,6 +96,12 @@ export function RegistrationPage() {
     { key: "education", header: "Education", render: (t) => t.education },
     { key: "subjects", header: "Subjects", render: (t) => t.subjects.join(", ") || "—" },
     { key: "assignments", header: "Assignments", render: (t) => t._count.assignments },
+    { key: "interviewRating", header: "Interview Rating", render: (t) => (t.interviewRating != null ? `★${t.interviewRating}` : "—") },
+    {
+      key: "parentRating",
+      header: "Parent Rating",
+      render: (t) => (t.avgParentRating != null ? `★${t.avgParentRating.toFixed(1)} (${t.parentRatingCount})` : "—"),
+    },
     { key: "status", header: "Status", render: (t) => <Badge tone={STATUS_TONE[t.status] ?? "neutral"}>{t.status}</Badge> },
     { key: "registeredAt", header: "Registered Date", render: (t) => new Date(t.createdAt).toLocaleDateString() },
   ];

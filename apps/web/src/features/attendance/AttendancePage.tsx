@@ -8,7 +8,6 @@ import { useSessionsForDate } from "./api";
 import { MarkSessionDialog } from "./MarkSessionDialog";
 import { CheckInOutDialog } from "./CheckInOutDialog";
 import { CheckInOutButton } from "./CheckInOutButton";
-import { SHORT_CLASS_THRESHOLD_MINUTES } from "./constants";
 import type { ClassSessionRow } from "./types";
 
 const STATUS_TONE: Record<ClassSessionRow["status"], "neutral" | "success" | "danger" | "warning"> = {
@@ -88,9 +87,15 @@ export function AttendancePage({ nav = BRANCH_NAV, showTutorColumn = true, allow
       header: "Hours",
       render: (s) => {
         if (s.actualDurationMinutes == null) return "—";
-        const isShort = s.status === "COMPLETED" && s.actualDurationMinutes < SHORT_CLASS_THRESHOLD_MINUTES;
+        // Short relative to THIS assignment's own scheduled length, not a
+        // flat global floor — a 30-minute assignment running 25 minutes is
+        // short for that student even if it'd clear a blanket bar.
+        const isShort = s.status === "COMPLETED" && s.actualDurationMinutes < s.assignment.classDurationMinutes;
         return (
-          <span style={isShort ? { color: "var(--color-danger-500)", fontWeight: 700 } : undefined} title={isShort ? `Under ${SHORT_CLASS_THRESHOLD_MINUTES} minutes` : undefined}>
+          <span
+            style={isShort ? { color: "var(--color-danger-500)", fontWeight: 700 } : undefined}
+            title={isShort ? `Scheduled for ${(s.assignment.classDurationMinutes / 60).toFixed(2)}h` : undefined}
+          >
             {(s.actualDurationMinutes / 60).toFixed(2)}
             {isShort && " ⚠"}
           </span>

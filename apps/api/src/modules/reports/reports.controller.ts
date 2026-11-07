@@ -110,6 +110,10 @@ export const reportsController = {
     if (req.user!.role === "TUTOR") throw new ForbiddenError("Not available to tutors");
     const query = detailQuerySchema.parse(req.query);
     const result = await reportsService.tutorDetail(req.params.tutorId!, query, req.user!);
+    if (query.format === "csv") {
+      const filename = `${result.profile.name.replace(/[^a-z0-9]+/gi, "-")}_${query.from.toISOString().slice(0, 10)}_to_${query.to.toISOString().slice(0, 10)}.csv`;
+      return sendCsv(res, filename, reportCsv.tutorSessions(result.sessions));
+    }
     ok(res, result);
   }),
 

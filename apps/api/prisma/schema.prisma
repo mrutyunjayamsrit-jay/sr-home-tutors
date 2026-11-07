@@ -104,6 +104,9 @@ enum AttendanceMarkMethod {
   CLASS_CODE
   LOCATION
   MANUAL_AREA
+  // Nobody touched this session before its date passed — the system closed
+  // it out as ABSENT_TUTOR on its own. See src/jobs/attendanceClosing.ts.
+  SYSTEM_AUTO
 }
 
 enum BillingCycle {
@@ -293,6 +296,12 @@ model TutorEnquiry {
   areasInterested    String[]
   status             EnquiryStatus     @default(NEW)
   notes              String?
+  // Office's own 1-5 assessment of the candidate from the interview — set
+  // by whoever (branch staff or Super Admin) fills in this enquiry, and
+  // carried over to Tutor.interviewRating on conversion (see
+  // enquiries.service.ts convertTutorEnquiry). Useful input for Assign
+  // Tutor later, alongside any parent ratings the tutor earns afterward.
+  interviewRating    Int?
   createdById        String
   // The date the enquiry was actually raised — distinct from createdAt
   // (when the row was entered into the system), since office staff often
@@ -410,6 +419,12 @@ model Tutor {
   subjects      String[]
   areas         String[]
   status        ProfileStatus   @default(REGISTERED)
+  // Office's own 1-5 assessment of the candidate, carried over from
+  // TutorEnquiry.interviewRating at registration (see
+  // enquiries.service.ts convertTutorEnquiry) — a signal Assign Tutor can
+  // use alongside parent ratings when picking who to assign, distinct from
+  // TutorRating below (which comes from parents, after the fact).
+  interviewRating Int?
   startedAt     DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -419,8 +434,30 @@ model Tutor {
   enquiry     TutorEnquiry? @relation(fields: [enquiryId], references: [id])
   assignments Assignment[]
   payouts     TutorPayout[]
+  ratings     TutorRating[]
 
   @@index([branchId, status])
+}
+
+// A parent's rating of the tutor assigned to their child, based on the
+// child's actual progress — distinct from Tutor.interviewRating (office's
+// own candidate assessment at registration time). One per assignment,
+// updatable as progress continues rather than an accumulating log — see
+// ratings.service.ts.
+model TutorRating {
+  id           String   @id @default(cuid())
+  assignmentId String   @unique
+  tutorId      String
+  rating       Int
+  comment      String?
+  ratedById    String
+  ratedAt      DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+  tutor      Tutor      @relation(fields: [tutorId], references: [id])
+
+  @@index([tutorId])
 }
 
 model Parent {
@@ -510,6 +547,7 @@ model Assignment {
   sessions    ClassSession[]
   testResults TestResult[]
   reviews     TutorStudentReview[]
+  rating      TutorRating?
 
   @@index([branchId, status])
   @@index([tutorId])

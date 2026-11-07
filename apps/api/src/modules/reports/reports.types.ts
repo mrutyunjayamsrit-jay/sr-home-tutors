@@ -58,5 +58,6 @@ export const studentIdParamSchema = z.object({ studentId: z.string().cuid() });
 export const detailQuerySchema = z.object({
   from: istFromDate,
   to: istToDate,
+  format: z.enum(["json", "csv"]).default("json"),
 });
 export type DetailQuery = z.infer<typeof detailQuerySchema>;

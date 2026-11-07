@@ -8,6 +8,7 @@ import { useChild } from "@/features/family/api";
 import type { TestResult } from "@/features/tests/types";
 import { useChildTests } from "./api";
 import { TutorReviewCard } from "./TutorReviewCard";
+import { RateTutorCard } from "./RateTutorCard";
 import styles from "./ParentPerformancePage.module.css";
 
 export function ParentPerformancePage() {
@@ -104,6 +105,10 @@ export function ParentPerformancePage() {
 
             {(childDetail.data?.assignments ?? []).map((a) => (
               <TutorReviewCard key={a.id} assignment={a} />
+            ))}
+
+            {(childDetail.data?.assignments ?? []).map((a) => (
+              <RateTutorCard key={`rate-${a.id}`} assignment={a} />
             ))}
 
             {rows.length === 0 ? (

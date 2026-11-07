@@ -129,6 +129,7 @@ export function EnquiriesPage() {
       render: (e) => (e.createdById === "PUBLIC_WEBSITE" ? <Badge tone="info">Website</Badge> : <span style={{ color: "var(--text-tertiary)" }}>Staff</span>),
     },
     { key: "enquiryDate", header: "Enquiry Date", render: (e) => new Date(e.enquiryDate).toLocaleDateString() },
+    { key: "interviewRating", header: "Interview Rating", render: (e) => (e.interviewRating != null ? `★${e.interviewRating}` : "—") },
     {
       key: "status",
       header: "Status",

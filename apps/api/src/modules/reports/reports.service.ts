@@ -2,8 +2,8 @@ import { prisma } from "@/common/prisma";
 import { ForbiddenError, NotFoundError } from "@/common/errors/AppError";
 import { reportsRepository } from "./reports.repository";
 import { toCsv } from "@/common/utils/csv";
-import { SHORT_CLASS_THRESHOLD_MINUTES } from "@/common/constants/attendance";
-import { istFirstOfMonth, istEndOfDay, istDateKey } from "@/common/utils/istDate";
+import { istFirstOfMonth, istStartOfDay, istEndOfDay, istDateKey } from "@/common/utils/istDate";
+import { ensureAttendanceClosed } from "@/jobs/attendanceClosing";
 import type { DetailQuery, MarkTutorPaidInput, ProfitLossQuery, ProfitLossTrendQuery, ReportQuery } from "./reports.types";
 
 interface Actor {
@@ -20,7 +20,39 @@ function periodKey(from: Date, to: Date) {
 }
 
 async function assignmentRows(query: Pick<ReportQuery, "from" | "to" | "branchId" | "tutorId" | "tutorName" | "studentName">) {
+  await ensureAttendanceClosed();
   return reportsRepository.assignmentsInRange(query.from, query.to, query.branchId, query.tutorId, query.tutorName, undefined, query.studentName);
+}
+
+type SessionLite = { status: string; scheduledDate: Date; tutorCheckIn: Date | null };
+
+// A session nobody ever touched — the tutor never checked in, and no one
+// manually marked it either — is never going to retroactively become
+// COMPLETED once its date is in the past. Treated as the tutor having been
+// absent that day, same derivation philosophy as staff-attendance.service.ts
+// (an "absent" day is a calendar day with no loginAt, never a status someone
+// has to remember to write). Office staff can still manually mark a past
+// session as ABSENT_TUTOR/ABSENT_STUDENT/CANCELLED, which this never
+// overrides — it only fills in sessions still sitting at the default
+// SCHEDULED with no check-in.
+function isUnmarkedPastSession(s: SessionLite, cutoff: Date) {
+  return s.status === "SCHEDULED" && s.scheduledDate < cutoff && s.tutorCheckIn == null;
+}
+
+/** Tutor didn't show up — either office marked it, or it's a past SCHEDULED session with no check-in. */
+function isTutorAbsent(s: SessionLite, cutoff: Date) {
+  return s.status === "ABSENT_TUTOR" || isUnmarkedPastSession(s, cutoff);
+}
+
+/**
+ * The student didn't get a class — either because they themselves were the
+ * no-show (ABSENT_STUDENT), or because the tutor never arrived (a class
+ * missing the tutor is still a class the student didn't attend). Per the
+ * source spec: a tutor absence always counts as a student absence too, not
+ * just a tutor one.
+ */
+function isStudentAbsent(s: SessionLite, cutoff: Date) {
+  return s.status === "ABSENT_STUDENT" || isTutorAbsent(s, cutoff);
 }
 
 export const reportsService = {
@@ -30,21 +62,28 @@ export const reportsService = {
    * one sortable/exportable list rather than a nested per-tutor view).
    */
   async tutorAttendance(query: ReportQuery) {
+    const cutoff = istStartOfDay(new Date());
     const assignments = await assignmentRows(query);
     const rows = assignments.map((a) => {
       const completedSessions = a.sessions.filter((s) => s.status === "COMPLETED");
       const present = completedSessions.length;
-      const absent = a.sessions.filter((s) => s.status === "ABSENT_TUTOR").length;
+      const absent = a.sessions.filter((s) => isTutorAbsent(s, cutoff)).length;
       const workedMinutes = completedSessions.reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0), 0);
-      // Real check-in→check-out duration under the threshold — see
+      // Real check-in→check-out duration under what THIS assignment is
+      // actually scheduled for (classDurationMinutes) — not a flat global
+      // floor, since a 30-minute assignment running 25 minutes is short for
+      // that student, even though it'd clear a blanket 40-minute bar. See
       // attendance.service.ts checkOutWithLocation/Area for where
-      // actualDurationMinutes now comes from an actual timestamp
-      // difference rather than the scheduled slot.
+      // actualDurationMinutes comes from (a real timestamp difference, not
+      // the scheduled slot). SHORT_CLASS_THRESHOLD_MINUTES is a separate,
+      // unrelated global floor used only for the Super Admin escalation
+      // notification (see notifications.service.ts).
       const shortClasses = completedSessions.filter(
-        (s) => s.actualDurationMinutes != null && s.actualDurationMinutes < SHORT_CLASS_THRESHOLD_MINUTES,
+        (s) => s.actualDurationMinutes != null && s.actualDurationMinutes < a.classDurationMinutes,
       ).length;
       return {
         assignmentId: a.id,
+        tutorId: a.tutorId,
         tutorName: a.tutor.name,
         studentName: a.student.name,
         studentClass: a.student.studentClass,
@@ -62,10 +101,11 @@ export const reportsService = {
 
   /** PDF §5.1 "student attendance report." */
   async studentAttendance(query: ReportQuery) {
+    const cutoff = istStartOfDay(new Date());
     const assignments = await assignmentRows(query);
     const rows = assignments.map((a) => {
       const attended = a.sessions.filter((s) => s.status === "COMPLETED").length;
-      const absent = a.sessions.filter((s) => s.status === "ABSENT_STUDENT").length;
+      const absent = a.sessions.filter((s) => isStudentAbsent(s, cutoff)).length;
       const chapters = Array.from(new Set(a.sessions.map((s) => s.chaptersCovered).filter(Boolean))).join("; ");
       const workedMinutes = a.sessions
         .filter((s) => s.status === "COMPLETED")
@@ -93,10 +133,11 @@ export const reportsService = {
    * lives in tutorPaymentsSummary below instead of reshaping this one.
    */
   async tutorPayments(query: ReportQuery) {
+    const cutoff = istStartOfDay(new Date());
     const assignments = await assignmentRows(query);
     const rows = assignments.map((a) => {
       const classesTaken = a.sessions.filter((s) => s.status === "COMPLETED").length;
-      const classesAbsent = a.sessions.filter((s) => s.status === "ABSENT_TUTOR").length;
+      const classesAbsent = a.sessions.filter((s) => isTutorAbsent(s, cutoff)).length;
       const workedMinutes = a.sessions
         .filter((s) => s.status === "COMPLETED")
         .reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0), 0);
@@ -125,6 +166,7 @@ export const reportsService = {
    * only via markTutorPaid below — never fabricated.
    */
   async tutorPaymentsSummary(query: ReportQuery) {
+    const cutoff = istStartOfDay(new Date());
     const assignments = await assignmentRows(query);
 
     const byTutor = new Map<
@@ -144,7 +186,7 @@ export const reportsService = {
     for (const a of assignments) {
       const rate = Number(a.perClassRate);
       const classesTaken = a.sessions.filter((s) => s.status === "COMPLETED").length;
-      const classesAbsent = a.sessions.filter((s) => s.status === "ABSENT_TUTOR").length;
+      const classesAbsent = a.sessions.filter((s) => isTutorAbsent(s, cutoff)).length;
       const workedMinutes = a.sessions
         .filter((s) => s.status === "COMPLETED")
         .reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0), 0);
@@ -288,12 +330,14 @@ export const reportsService = {
    * outstanding figures shown here always match the row that was clicked.
    */
   async tutorDetail(tutorId: string, query: DetailQuery, actor: Actor) {
+    await ensureAttendanceClosed();
     const tutor = await reportsRepository.tutorById(tutorId);
     if (!tutor) throw new NotFoundError("Tutor not found");
     if (actor.role !== "SUPER_ADMIN" && actor.branchId !== tutor.branchId) {
       throw new ForbiddenError("You don't have access to this branch's data");
     }
 
+    const cutoff = istStartOfDay(new Date());
     const assignments = await reportsRepository.assignmentsInRange(query.from, query.to, undefined, tutorId);
 
     let present = 0;
@@ -301,13 +345,28 @@ export const reportsService = {
     let workedMinutes = 0;
     let shortClasses = 0;
     let fixedClasses = 0;
+    // Flattened one-row-per-class-session view across every assignment —
+    // what the dialog's "classes this period" drill-down and CSV download
+    // are actually built from, since the per-assignment totals above can't
+    // answer "which date, how many hours, what time did they check in."
+    const sessionRows: {
+      id: string;
+      date: Date;
+      studentName: string;
+      status: string;
+      checkInAt: Date | null;
+      checkOutAt: Date | null;
+      hours: number;
+      scheduledHours: number;
+      isShort: boolean;
+    }[] = [];
 
     const assignmentRows = assignments.map((a) => {
       const completed = a.sessions.filter((s) => s.status === "COMPLETED");
       const classesTaken = completed.length;
-      const classesAbsent = a.sessions.filter((s) => s.status === "ABSENT_TUTOR").length;
+      const classesAbsent = a.sessions.filter((s) => isTutorAbsent(s, cutoff)).length;
       const minutes = completed.reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0), 0);
-      const short = completed.filter((s) => s.actualDurationMinutes != null && s.actualDurationMinutes < SHORT_CLASS_THRESHOLD_MINUTES).length;
+      const short = completed.filter((s) => s.actualDurationMinutes != null && s.actualDurationMinutes < a.classDurationMinutes).length;
       const rate = Number(a.perClassRate);
 
       fixedClasses += a.fixedClassesPerMonth;
@@ -315,6 +374,20 @@ export const reportsService = {
       absent += classesAbsent;
       workedMinutes += minutes;
       shortClasses += short;
+
+      for (const s of a.sessions) {
+        sessionRows.push({
+          id: s.id,
+          date: s.scheduledDate,
+          studentName: a.student.name,
+          status: isTutorAbsent(s, cutoff) && s.status === "SCHEDULED" ? "ABSENT_TUTOR" : s.status,
+          checkInAt: s.tutorCheckIn,
+          checkOutAt: s.tutorCheckOut,
+          hours: hours(s.actualDurationMinutes ?? 0),
+          scheduledHours: hours(a.classDurationMinutes),
+          isShort: s.status === "COMPLETED" && s.actualDurationMinutes != null && s.actualDurationMinutes < a.classDurationMinutes,
+        });
+      }
 
       return {
         assignmentId: a.id,
@@ -329,6 +402,8 @@ export const reportsService = {
         payableAmount: round2(classesTaken * rate),
       };
     });
+
+    sessionRows.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     const payableAmount = round2(assignmentRows.reduce((sum, r) => sum + r.payableAmount, 0));
     const payouts = await reportsRepository.tutorPayoutsForPeriod([tutorId], periodKey(query.from, query.to));
@@ -352,6 +427,7 @@ export const reportsService = {
       attendance: { fixedClasses, present, absent, totalHoursWorked: hours(workedMinutes), shortClasses },
       payments: { payableAmount, paidAmount, outstandingAmount },
       assignments: assignmentRows,
+      sessions: sessionRows,
       period: { from: query.from, to: query.to },
     };
   },
@@ -365,6 +441,7 @@ export const reportsService = {
    * more useful seen whole than clipped to the current filter.
    */
   async studentDetail(studentId: string, query: DetailQuery, actor: Actor) {
+    await ensureAttendanceClosed();
     const student = await reportsRepository.studentById(studentId);
     if (!student) throw new NotFoundError("Student not found");
     if (actor.role !== "SUPER_ADMIN" && actor.branchId !== student.parent.branchId) {
@@ -540,6 +617,18 @@ export const reportsService = {
 };
 
 export const reportCsv = {
+  /** One tutor's per-date session log for a period — the "which date, how many hours, when did they check in" download behind TutorDetailDialog. */
+  tutorSessions: (rows: Awaited<ReturnType<typeof reportsService.tutorDetail>>["sessions"]) =>
+    toCsv(rows, [
+      { key: "date", header: "Date" },
+      { key: "studentName", header: "Student" },
+      { key: "status", header: "Status" },
+      { key: "checkInAt", header: "Check-in Time" },
+      { key: "checkOutAt", header: "Check-out Time" },
+      { key: "hours", header: "Hours" },
+      { key: "scheduledHours", header: "Scheduled Hours" },
+      { key: "isShort", header: "Under Scheduled Duration" },
+    ]),
   tutorAttendance: (rows: Awaited<ReturnType<typeof reportsService.tutorAttendance>>["rows"]) =>
     toCsv(rows, [
       { key: "tutorName", header: "Tutor" },
@@ -551,7 +640,7 @@ export const reportCsv = {
       { key: "present", header: "Present" },
       { key: "absent", header: "Absent" },
       { key: "totalHoursWorked", header: "Total Hours Worked" },
-      { key: "shortClasses", header: "Classes Under 40 Min" },
+      { key: "shortClasses", header: "Classes Under Scheduled Duration" },
     ]),
   studentAttendance: (rows: Awaited<ReturnType<typeof reportsService.studentAttendance>>["rows"]) =>
     toCsv(rows, [

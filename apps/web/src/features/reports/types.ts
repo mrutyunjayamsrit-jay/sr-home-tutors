@@ -1,5 +1,6 @@
 export interface TutorAttendanceRow {
   assignmentId: string;
+  tutorId: string;
   tutorName: string;
   studentName: string;
   studentClass: string;
@@ -93,6 +94,21 @@ export interface TutorDetailAssignmentRow {
   payableAmount: number;
 }
 
+/** One class session, flattened across every assignment — the "which date, how many hours, when did they check in" row behind TutorDetailDialog's drill-down table and CSV download. */
+export interface TutorDetailSessionRow {
+  id: string;
+  date: string;
+  studentName: string;
+  status: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  hours: number;
+  /** The assignment's own scheduled class length, for this one session — not a flat global floor. */
+  scheduledHours: number;
+  /** Completed, but ran under its own scheduled length. */
+  isShort: boolean;
+}
+
 /** See reports.service.ts's tutorDetail. */
 export interface TutorDetail {
   profile: {
@@ -111,6 +127,7 @@ export interface TutorDetail {
   attendance: { fixedClasses: number; present: number; absent: number; totalHoursWorked: number; shortClasses: number };
   payments: { payableAmount: number; paidAmount: number; outstandingAmount: number };
   assignments: TutorDetailAssignmentRow[];
+  sessions: TutorDetailSessionRow[];
   period: { from: string; to: string };
 }
 

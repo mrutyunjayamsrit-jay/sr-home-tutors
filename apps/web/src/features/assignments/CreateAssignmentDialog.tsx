@@ -57,9 +57,20 @@ export function CreateAssignmentDialog({ open, onClose }: { open: boolean; onClo
 
   const genderTag = (g: string | null) => (g === "MALE" ? " · M" : g === "FEMALE" ? " · F" : g === "OTHER" ? " · Other" : "");
 
+  // Rating data surfaced right in the picker — exactly where "who should I
+  // assign" gets decided — rather than making office cross-reference
+  // Registration separately. Office's own interview score and the average
+  // of parents' per-assignment ratings, when either exists.
+  const ratingTag = (t: { interviewRating: number | null; avgParentRating: number | null; parentRatingCount: number }) => {
+    const parts: string[] = [];
+    if (t.interviewRating != null) parts.push(`interview ★${t.interviewRating}`);
+    if (t.avgParentRating != null) parts.push(`parents ★${t.avgParentRating.toFixed(1)} (${t.parentRatingCount})`);
+    return parts.length ? ` [${parts.join(", ")}]` : "";
+  };
+
   const tutorOptions = (tutorsData?.data ?? []).map((t) => ({
     value: t.id,
-    label: `${t.name}${genderTag(t.gender)} — ${t.subjects.join(", ") || "no subjects listed"}`,
+    label: `${t.name}${genderTag(t.gender)} — ${t.subjects.join(", ") || "no subjects listed"}${ratingTag(t)}`,
   }));
   const studentOptions = (parentsData?.data ?? []).flatMap((p) =>
     p.students.map((s) => ({

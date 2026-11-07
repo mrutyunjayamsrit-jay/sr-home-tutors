@@ -1,9 +1,26 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Modal, DataTable, Badge, Spinner } from "@/components/ui";
+import { Modal, DataTable, Badge, Button, Spinner, toast } from "@/components/ui";
 import type { Column } from "@/components/ui";
-import { useTutorDetail } from "./api";
+import { useTutorDetail, downloadTutorSessionsCsv } from "./api";
 import type { ReportFilters } from "./api";
-import type { TutorDetailAssignmentRow } from "./types";
+import type { TutorDetailAssignmentRow, TutorDetailSessionRow } from "./types";
+
+const SESSION_STATUS_TONE: Record<string, "neutral" | "success" | "danger" | "warning"> = {
+  SCHEDULED: "neutral",
+  COMPLETED: "success",
+  ABSENT_STUDENT: "danger",
+  ABSENT_TUTOR: "danger",
+  CANCELLED: "warning",
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+function formatTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 /**
  * Opened from a row click on the Reports page's Tutor Payments/Attendance
@@ -22,6 +39,37 @@ export function TutorDetailDialog({
   onClose: () => void;
 }) {
   const { data, isLoading } = useTutorDetail(tutorId, filters, Boolean(tutorId));
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!tutorId || !data) return;
+    setDownloading(true);
+    try {
+      await downloadTutorSessionsCsv(tutorId, filters, `${data.profile.name.replace(/[^a-z0-9]+/gi, "-")}_${filters.from}_to_${filters.to}.csv`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not download");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const sessionColumns: Column<TutorDetailSessionRow>[] = [
+    { key: "date", header: "Date", render: (r) => formatDate(r.date) },
+    { key: "studentName", header: "Student", render: (r) => r.studentName },
+    { key: "status", header: "Status", render: (r) => <Badge tone={SESSION_STATUS_TONE[r.status] ?? "neutral"}>{r.status.replace("_", " ")}</Badge> },
+    { key: "checkInAt", header: "Check-in", render: (r) => formatTime(r.checkInAt) },
+    { key: "checkOutAt", header: "Check-out", render: (r) => formatTime(r.checkOutAt) },
+    {
+      key: "hours",
+      header: "Hours",
+      render: (r) => (
+        <span style={r.isShort ? { color: "var(--color-danger-500)", fontWeight: 700 } : undefined} title={r.isShort ? `Scheduled for ${r.scheduledHours}h` : undefined}>
+          {r.hours}
+          {r.isShort && " ⚠"}
+        </span>
+      ),
+    },
+  ];
 
   const columns: Column<TutorDetailAssignmentRow>[] = [
     { key: "studentName", header: "Student", render: (r) => `${r.studentName} (${r.studentClass})` },
@@ -86,6 +134,25 @@ export function TutorDetailDialog({
               columns={columns}
               rows={data.assignments}
               rowKey={(r) => r.assignmentId}
+              isLoading={false}
+              emptyTitle="No classes in this period"
+              emptyDescription="This tutor had no scheduled classes in the selected date range."
+            />
+          </div>
+
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)" }}>
+              <h3 style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
+                Classes this period — by date
+              </h3>
+              <Button size="sm" variant="secondary" onClick={handleDownload} loading={downloading}>
+                Download CSV
+              </Button>
+            </div>
+            <DataTable
+              columns={sessionColumns}
+              rows={data.sessions}
+              rowKey={(r) => r.id}
               isLoading={false}
               emptyTitle="No classes in this period"
               emptyDescription="This tutor had no scheduled classes in the selected date range."

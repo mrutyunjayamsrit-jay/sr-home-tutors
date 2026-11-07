@@ -171,3 +171,8 @@ export function downloadReportCsv(
 ) {
   return apiDownload(`/reports/${kind}?${qs(filters)}&format=csv`, filename);
 }
+
+/** One tutor's per-date session log (date, status, check-in/out, hours) for the active period — see reports.service.ts's tutorDetail + reportCsv.tutorSessions. */
+export function downloadTutorSessionsCsv(tutorId: string, filters: Pick<ReportFilters, "from" | "to">, filename: string) {
+  return apiDownload(`/reports/tutors/${tutorId}/detail?from=${filters.from}&to=${filters.to}&format=csv`, filename);
+}

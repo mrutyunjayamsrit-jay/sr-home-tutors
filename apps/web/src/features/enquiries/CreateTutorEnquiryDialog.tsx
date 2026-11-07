@@ -25,6 +25,13 @@ const ADDRESS_PROOF_OPTIONS = [
   { value: "PASSPORT", label: "Passport" },
   { value: "OTHER", label: "Other" },
 ];
+const INTERVIEW_RATING_OPTIONS = [
+  { value: "1", label: "★ 1 — Poor" },
+  { value: "2", label: "★★ 2 — Below average" },
+  { value: "3", label: "★★★ 3 — Average" },
+  { value: "4", label: "★★★★ 4 — Good" },
+  { value: "5", label: "★★★★★ 5 — Excellent" },
+];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -44,6 +51,7 @@ const schema = z.object({
   areasInterested: z.array(z.string()).default([]),
   notes: z.string().optional(),
   enquiryDate: z.string().min(1, "Required"),
+  interviewRating: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -92,6 +100,7 @@ export function CreateTutorEnquiryDialog({ open, onClose }: { open: boolean; onC
         areasInterested: values.areasInterested,
         notes: values.notes || undefined,
         enquiryDate: values.enquiryDate,
+        interviewRating: values.interviewRating ? Number(values.interviewRating) : undefined,
       });
       toast.success(`Tutor enquiry for ${values.name} added`);
       handleClose();
@@ -146,6 +155,13 @@ export function CreateTutorEnquiryDialog({ open, onClose }: { open: boolean; onC
           options={areaOptions}
           value={selectedAreas}
           onChange={(next) => setValue("areasInterested", next)}
+        />
+        <Select
+          label="Interview rating"
+          placeholder="Not rated"
+          hint="Office's own assessment of the candidate — carried over once registered, and used later when picking who to assign"
+          options={INTERVIEW_RATING_OPTIONS}
+          {...register("interviewRating")}
         />
         <TextField label="Notes" error={errors.notes?.message} {...register("notes")} />
         <Button type="submit" loading={createEnquiry.isPending} fullWidth>

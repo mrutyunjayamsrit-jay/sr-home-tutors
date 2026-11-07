@@ -24,6 +24,8 @@ export const createTutorEnquirySchema = z.object({
   notes: optionalString(z.string().max(2000)),
   // Defaults to today when omitted — see enquiries.service.ts createTutorEnquiry.
   enquiryDate: z.coerce.date().optional(),
+  // Office's own 1-5 interview assessment — carried over to Tutor.interviewRating on conversion.
+  interviewRating: z.coerce.number().int().min(1).max(5).optional(),
 });
 export type CreateTutorEnquiryInput = z.infer<typeof createTutorEnquirySchema>;
 

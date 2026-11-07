@@ -29,11 +29,16 @@ export const reportsRepository = {
         sessions: {
           where: { scheduledDate: { gte: from, lte: to } },
           select: {
+            id: true,
             status: true,
             actualDurationMinutes: true,
             chaptersCovered: true,
             topicsCovered: true,
+            scheduledDate: true,
+            tutorCheckIn: true,
+            tutorCheckOut: true,
           },
+          orderBy: { scheduledDate: "asc" },
         },
       },
       orderBy: { createdAt: "desc" },

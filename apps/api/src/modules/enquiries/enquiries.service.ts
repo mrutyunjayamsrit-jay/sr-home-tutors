@@ -90,6 +90,7 @@ export const enquiriesService = {
       areasInterested: input.areasInterested,
       notes: input.notes,
       enquiryDate: input.enquiryDate ?? new Date(),
+      interviewRating: input.interviewRating,
       createdById: actor.id,
       status: "NEW",
     });
@@ -161,6 +162,7 @@ export const enquiriesService = {
           categories: enquiry.categories,
           subjects: enquiry.subjectsInterested,
           areas: enquiry.areasInterested,
+          interviewRating: enquiry.interviewRating,
           status: "REGISTERED",
         },
       });

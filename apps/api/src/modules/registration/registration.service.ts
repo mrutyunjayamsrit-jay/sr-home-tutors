@@ -61,7 +61,21 @@ export const registrationService = {
       }),
       prisma.tutor.count({ where }),
     ]);
-    return { items, total };
+
+    // Parent ratings (see ratings.service.ts) — batched once per page
+    // rather than once per tutor, same convention as the Document
+    // receipt-count lookups elsewhere (e.g. expenses.service.ts).
+    const ratingStats = items.length
+      ? await prisma.tutorRating.groupBy({ by: ["tutorId"], where: { tutorId: { in: items.map((t) => t.id) } }, _avg: { rating: true }, _count: { _all: true } })
+      : [];
+    const ratingByTutor = new Map(ratingStats.map((r) => [r.tutorId, { avgRating: r._avg.rating, ratingCount: r._count._all }]));
+    const itemsWithRatings = items.map((t) => ({
+      ...t,
+      avgParentRating: ratingByTutor.get(t.id)?.avgRating ?? null,
+      parentRatingCount: ratingByTutor.get(t.id)?.ratingCount ?? 0,
+    }));
+
+    return { items: itemsWithRatings, total };
   },
 
   async getTutor(id: string, actor: Actor) {
@@ -77,7 +91,8 @@ export const registrationService = {
     if (actor.role !== "SUPER_ADMIN" && actor.branchId !== tutor.branchId) {
       throw new ForbiddenError("You don't have access to this branch's data");
     }
-    return tutor;
+    const ratingAgg = await prisma.tutorRating.aggregate({ where: { tutorId: id }, _avg: { rating: true }, _count: { _all: true } });
+    return { ...tutor, avgParentRating: ratingAgg._avg.rating, parentRatingCount: ratingAgg._count._all };
   },
 
   async listParents(params: ListParams, actor: Actor) {

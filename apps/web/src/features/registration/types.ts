@@ -13,6 +13,11 @@ export interface RegisteredTutor {
   branch: { id: string; name: string };
   _count: { assignments: number };
   createdAt: string;
+  /** Office's own 1-5 interview assessment, carried over from the Tutor Enquiry at registration. */
+  interviewRating: number | null;
+  /** Average of parents' per-assignment ratings (see features/ratings) — null if nobody's rated this tutor yet. */
+  avgParentRating: number | null;
+  parentRatingCount: number;
 }
 
 export interface RegisteredParent {

@@ -231,7 +231,9 @@ export function ReportsPage() {
 
         {!rangeValid && <p style={{ color: "var(--color-danger-500)" }}>"From" date must be on or before "To" date.</p>}
 
-        {tab === "tutorAttendance" && <TutorAttendanceTable data={tutorAttendanceRows} isLoading={tutorAttendance.isLoading} />}
+        {tab === "tutorAttendance" && (
+          <TutorAttendanceTable data={tutorAttendanceRows} isLoading={tutorAttendance.isLoading} onDetail={setDetailTutorId} />
+        )}
         {tab === "studentAttendance" && (
           <StudentAttendanceTable data={studentAttendanceRows} isLoading={studentAttendance.isLoading} />
         )}
@@ -267,9 +269,17 @@ export function ReportsPage() {
 const EMPTY_TITLE = "No data for this period yet";
 const EMPTY_DESC = "This fills in automatically once the Assign Tutor and Attendance modules are recording classes.";
 
-function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]; isLoading: boolean }) {
+function TutorAttendanceTable({
+  data,
+  isLoading,
+  onDetail,
+}: {
+  data?: TutorAttendanceRow[];
+  isLoading: boolean;
+  onDetail: (tutorId: string) => void;
+}) {
   const columns: Column<TutorAttendanceRow>[] = [
-    { key: "tutorName", header: "Tutor", render: (r) => r.tutorName },
+    { key: "tutorName", header: "Tutor", render: (r) => <strong style={{ color: "var(--color-primary-600)" }}>{r.tutorName}</strong> },
     { key: "studentName", header: "Student", render: (r) => `${r.studentName} (${r.studentClass})` },
     { key: "fixedClasses", header: "Fixed Classes", render: (r) => r.fixedClasses },
     { key: "fixedFees", header: "Fixed Fee/Class", render: (r) => `₹${r.fixedFees}` },
@@ -281,7 +291,7 @@ function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]
       header: "Short Classes",
       render: (r) =>
         r.shortClasses > 0 ? (
-          <strong style={{ color: "var(--color-danger-500)" }} title={`${r.shortClasses} class(es) under 40 minutes`}>
+          <strong style={{ color: "var(--color-danger-500)" }} title={`${r.shortClasses} class(es) under their scheduled duration`}>
             {r.shortClasses} ⚠
           </strong>
         ) : (
@@ -289,7 +299,17 @@ function TutorAttendanceTable({ data, isLoading }: { data?: TutorAttendanceRow[]
         ),
     },
   ];
-  return <DataTable columns={columns} rows={data ?? []} rowKey={(r) => r.assignmentId} isLoading={isLoading} emptyTitle={EMPTY_TITLE} emptyDescription={EMPTY_DESC} />;
+  return (
+    <DataTable
+      columns={columns}
+      rows={data ?? []}
+      rowKey={(r) => r.assignmentId}
+      isLoading={isLoading}
+      emptyTitle={EMPTY_TITLE}
+      emptyDescription={EMPTY_DESC}
+      onRowClick={(r) => onDetail(r.tutorId)}
+    />
+  );
 }
 
 function StudentAttendanceTable({ data, isLoading }: { data?: StudentAttendanceRow[]; isLoading: boolean }) {
